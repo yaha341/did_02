@@ -67,9 +67,13 @@ function PaymentMethodsPage() {
 
   async function onSave() {
     if (!editing) return;
-    await savePaymentMethod({ data: editing });
-    setEditing(null);
-    qc.invalidateQueries({ queryKey: ["payment-methods"] });
+    try {
+      await savePaymentMethod({ data: editing });
+      setEditing(null);
+      qc.invalidateQueries({ queryKey: ["payment-methods"] });
+    } catch (e: any) {
+      alert("Ошибка при сохранении: " + e.message);
+    }
   }
   async function onDelete(id: string) {
     if (!confirm("Удалить способ оплаты?")) return;
