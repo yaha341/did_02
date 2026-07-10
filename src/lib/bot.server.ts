@@ -321,13 +321,14 @@ async function startCheckout(chat_id: number, user: BotUser) {
     return;
   }
   
-  if (!user.state?.country_code) {
-    await askCountry(chat_id, telegram_id, true);
-    return;
+  let country_code = user.state?.country_code;
+  if (!country_code) {
+    const s = await db();
+    const { data: m } = await s.from("payment_methods").select("country_code").eq("is_active", true).order("sort_order").limit(1).maybeSingle();
+    country_code = m?.country_code || "KZ";
   }
-
-  // user has contact and country, proceed directly to placeOrder
-  await placeOrder(chat_id, user, user.state.country_code);
+  // user has contact, proceed directly to placeOrder
+  await placeOrder(chat_id, user, country_code);
 }
 
 async function askCountry(chat_id: number, telegram_id: number, forCheckout = false) {
@@ -662,13 +663,7 @@ export async function handleUpdate(update: any) {
 
       const user = await upsertUser(cq.from as any);
       
-      // Before allowing navigation, require country code
-      if (!data.startsWith("setcountry:") && !data.startsWith("confirm:") && !data.startsWith("reject:") && data !== "clear" && !data.startsWith("rem:") && !data.startsWith("add:") && !data.startsWith("lang_ru:") && !data.startsWith("lang_kz:") && !data.startsWith("searchmore:") && !data.startsWith("prod:")) {
-        if (!user.state?.country_code) {
-          await askCountry(chat_id, from_id);
-          return;
-        }
-      }
+
 
       if (data.startsWith("cat:root")) {
         const parts = data.split(":");
@@ -823,11 +818,7 @@ export async function handleUpdate(update: any) {
           parse_mode: "HTML",
         });
       }
-      if (!user.state?.country_code) {
-        await askCountry(chat_id, from.id);
-      } else {
-        await sendMain(chat_id, `Привет, ${user.first_name || "друг"}! Добро пожаловать в магазин.`);
-      }
+      await sendMain(chat_id, `Привет, ${user.first_name || "друг"}! Добро пожаловать в магазин.`);
       return;
     }
     if (msg.text === "/id") {
@@ -845,11 +836,13 @@ export async function handleUpdate(update: any) {
       });
       if (user.state?.mode === "awaiting_contact") {
         await setState(from.id, { ...user.state, mode: "idle" });
-        if (!user.state?.country_code) {
-          await askCountry(chat_id, from.id, true);
-        } else {
-          await placeOrder(chat_id, user, user.state.country_code);
+        let country_code = user.state?.country_code;
+        if (!country_code) {
+          const s = await db();
+          const { data: m } = await s.from("payment_methods").select("country_code").eq("is_active", true).order("sort_order").limit(1).maybeSingle();
+          country_code = m?.country_code || "KZ";
         }
+        await placeOrder(chat_id, user, country_code);
       }
       return;
     }
@@ -940,10 +933,7 @@ export async function handleUpdate(update: any) {
       return showSearch(chat_id, user, msg.text);
     }
 
-    if (!user.state?.country_code && msg.text && ["📚 Каталог", "🔍 Поиск", "🛒 Корзина", "📋 Мои заказы"].includes(msg.text)) {
-      await askCountry(chat_id, from.id);
-      return;
-    }
+
 
     // Main menu buttons
     switch (msg.text) {

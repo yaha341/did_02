@@ -345,34 +345,7 @@ function ProductsPage() {
             </div>
           </div>
 
-          {pMethods.data && pMethods.data.length > 0 && (
-            <div className="space-y-4 pt-4 border-t">
-              <h3 className="font-medium">Цены для разных стран (вручную)</h3>
-              <p className="text-xs text-muted-foreground">Если оставить поле пустым — будет работать автоматическая конвертация базовой цены.</p>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {pMethods.data.map((m) => (
-                  <div key={m.country_code} className="space-y-2">
-                    <Label>{m.country_name} ({m.currency})</Label>
-                    <Input
-                      type="number"
-                      placeholder="Авто (по курсу)"
-                      value={editing.country_prices?.[m.country_code] ?? ""}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        const newPrices = { ...editing.country_prices };
-                        if (val === "") {
-                          delete newPrices[m.country_code];
-                        } else {
-                          newPrices[m.country_code] = Number(val);
-                        }
-                        setEditing({ ...editing, country_prices: newPrices });
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+
 
           <div className="space-y-2 pt-4 border-t">
             <Label htmlFor="file-ru">📄 Файл товара (Русский)</Label>
