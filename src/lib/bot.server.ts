@@ -91,8 +91,8 @@ async function showCategories(chat_id: number, parentId: string | null, userCoun
     .order("sort_order")
     .order("name");
   const { data: products } = parentId
-    ? await productsQuery.contains("category_ids", JSON.stringify([parentId]))
-    : await productsQuery.eq("category_ids", "[]");
+    ? await productsQuery.contains("category_ids", [parentId])
+    : await productsQuery.eq("category_ids", []);
 
   let targetCurrency = "KZT";
   if (userCountryCode) {
