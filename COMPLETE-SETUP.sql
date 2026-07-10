@@ -21,13 +21,17 @@ ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
 CREATE TABLE public.products (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   category_id UUID REFERENCES public.categories(id) ON DELETE SET NULL,
+  category_ids UUID[] DEFAULT '{}',
   name TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   keywords TEXT NOT NULL DEFAULT '',
   price NUMERIC(10,2) NOT NULL DEFAULT 0,
   currency TEXT NOT NULL DEFAULT 'KZT',
+  country_prices JSONB DEFAULT '{}',
   file_path TEXT,
   file_name TEXT,
+  file_path_kz TEXT,
+  file_name_kz TEXT,
   is_active BOOLEAN NOT NULL DEFAULT true,
   sort_order INT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -57,6 +61,7 @@ CREATE TABLE public.payment_methods (
   instructions TEXT NOT NULL,
   sort_order INT NOT NULL DEFAULT 0,
   is_active BOOLEAN NOT NULL DEFAULT true,
+  qr_code_path TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 GRANT ALL ON public.payment_methods TO service_role;
