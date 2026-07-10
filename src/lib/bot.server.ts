@@ -22,7 +22,7 @@ function originFromState(): string {
     process.env.PUBLIC_APP_URL ||
     (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "") ||
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
-    `https://project--79250394-984a-476c-a6aa-efe3efcc4b0e-dev.lovable.app`
+    `https://did-02.vercel.app`
   );
 }
 
