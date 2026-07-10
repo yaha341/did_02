@@ -445,11 +445,22 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
 
   await setState(telegram_id, { mode: "awaiting_proof", pending_order_id: order.id as number });
 
-  await tg("sendMessage", {
-    chat_id,
-    text: `🧾 <b>Заказ #${order.id}</b> создан.\n\nСумма к оплате: <b>${total} ${currency}</b>\n\n${method!.instructions}\n\nПосле оплаты <b>пришлите скриншот</b> (фото) в этот чат — продавец проверит и пришлёт файлы.`,
-    parse_mode: "HTML",
-  });
+  const text = `🧾 <b>Заказ #${order.id}</b> создан.\n\nСумма к оплате: <b>${total} ${currency}</b>\n\n${method!.instructions}\n\nПосле оплаты <b>пришлите скриншот</b> (фото) в этот чат — продавец проверит и пришлёт файлы.`;
+
+  if (method?.qr_code_path) {
+    await tg("sendPhoto", {
+      chat_id,
+      photo: imageUrl(method.qr_code_path),
+      caption: text,
+      parse_mode: "HTML",
+    });
+  } else {
+    await tg("sendMessage", {
+      chat_id,
+      text,
+      parse_mode: "HTML",
+    });
+  }
 }
 
 async function notifyAdminNewOrder(orderId: number, proofFileId: string | null, proofKind: "photo" | "document" | null) {
