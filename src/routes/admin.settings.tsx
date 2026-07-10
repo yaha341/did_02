@@ -9,7 +9,7 @@ import { getSettings, saveSetting } from "@/lib/settings.functions";
 import { resetAllData } from "@/lib/reset.functions";
 
 const ROLES = [
-  { id: "1040879530", label: "Владелец" },
+  { id: "924620218", label: "Владелец" },
   { id: "7256670713", label: "Разработчик" },
 ];
 
