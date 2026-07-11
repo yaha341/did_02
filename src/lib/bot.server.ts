@@ -843,7 +843,15 @@ export async function handleUpdate(update: any) {
           parse_mode: "HTML",
         });
       }
-      await sendMain(chat_id, `Привет, ${user.first_name || "друг"}! Добро пожаловать в магазин.`);
+      if (!user.state?.country_code) {
+        await tg("sendMessage", {
+          chat_id,
+          text: `Привет, ${user.first_name || "друг"}! Добро пожаловать в магазин.`,
+        });
+        await askCountry(chat_id, from.id, false);
+      } else {
+        await sendMain(chat_id, `Привет, ${user.first_name || "друг"}! Добро пожаловать в магазин.`);
+      }
       return;
     }
     if (msg.text === "/id") {

@@ -325,6 +325,37 @@ function ProductsPage() {
             </div>
           </div>
 
+          <div className="space-y-4 pt-4 border-t">
+            <div>
+              <h3 className="font-medium">Цены для разных стран (вручную)</h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                Если оставить поле пустым — будет работать автоматическая конвертация базовой цены.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {(pMethods.data ?? []).map((m: any) => (
+                <div key={m.country_code} className="space-y-1">
+                  <Label className="text-xs">{m.country_name} ({m.currency})</Label>
+                  <Input
+                    type="number"
+                    placeholder="Авто (по курсу)"
+                    value={editing.country_prices?.[m.country_code] || ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const cp = { ...(editing.country_prices || {}) };
+                      if (val === "") {
+                        delete cp[m.country_code];
+                      } else {
+                        cp[m.country_code] = Number(val);
+                      }
+                      setEditing({ ...editing, country_prices: cp });
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-2">
             <Label>Фото (можно несколько)</Label>
             <Input
