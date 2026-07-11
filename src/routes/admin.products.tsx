@@ -332,28 +332,34 @@ function ProductsPage() {
                 Если оставить поле пустым — будет работать автоматическая конвертация базовой цены.
               </p>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {(pMethods.data ?? []).map((m: any) => (
-                <div key={m.country_code} className="space-y-1">
-                  <Label className="text-xs">{m.country_name} ({m.currency})</Label>
-                  <Input
-                    type="number"
-                    placeholder="Авто (по курсу)"
-                    value={editing.country_prices?.[m.country_code] || ""}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      const cp = { ...(editing.country_prices || {}) };
-                      if (val === "") {
-                        delete cp[m.country_code];
-                      } else {
-                        cp[m.country_code] = Number(val);
-                      }
-                      setEditing({ ...editing, country_prices: cp });
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
+            {pMethods.isLoading ? (
+              <p className="text-xs text-muted-foreground">Загрузка стран...</p>
+            ) : (pMethods.data ?? []).length === 0 ? (
+              <p className="text-xs text-muted-foreground">Сначала добавьте реквизиты в разделе «Реквизиты по странам».</p>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {(pMethods.data ?? []).map((m: any) => (
+                  <div key={m.country_code} className="space-y-1">
+                    <Label className="text-xs">{m.country_name} ({m.currency})</Label>
+                    <Input
+                      type="number"
+                      placeholder="Авто (по курсу)"
+                      value={editing.country_prices?.[m.country_code] || ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const cp = { ...(editing.country_prices || {}) };
+                        if (val === "") {
+                          delete cp[m.country_code];
+                        } else {
+                          cp[m.country_code] = Number(val);
+                        }
+                        setEditing({ ...editing, country_prices: cp });
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
