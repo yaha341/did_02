@@ -369,7 +369,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
     .single();
   const { data: items } = await s
     .from("cart_items")
-    .select("id, quantity, products(id, name, price, currency, file_path, file_name, file_path_kz, file_name_kz, country_prices)")
+    .select("id, quantity, products(id, name, price, currency, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, country_prices)")
     .eq("telegram_id", telegram_id);
   if (!items?.length) {
     await tg("sendMessage", { chat_id, text: "🛒 Корзина пуста." });
@@ -437,6 +437,8 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
         file_name_snapshot: it.products?.file_name ?? null,
         file_path_kz_snapshot: it.products?.file_path_kz ?? null,
         file_name_kz_snapshot: it.products?.file_name_kz ?? null,
+        file_url_snapshot: it.products?.file_url ?? null,
+        file_url_kz_snapshot: it.products?.file_url_kz ?? null,
       };
     }),
   );
@@ -745,16 +747,28 @@ export async function handleUpdate(update: any) {
         const { sendFileToUser } = await import("./orders.functions");
         const path = lang === "ru" ? item.file_path_snapshot : item.file_path_kz_snapshot;
         const name = lang === "ru" ? item.file_name_snapshot : item.file_name_kz_snapshot;
+        const url = lang === "ru" ? item.file_url_snapshot : item.file_url_kz_snapshot;
 
-        await tg("sendMessage", { chat_id, text: `⏳ Загружаю файл (${lang === "ru" ? "Русский" : "Қазақша"})...` });
-
-        await sendFileToUser(
-          order.telegram_id,
-          path,
-          name || "file.bin",
-          item.name_snapshot,
-          item.quantity || 1
-        );
+        if (url) {
+          for (let i = 0; i < (item.quantity || 1); i++) {
+            await tg("sendMessage", {
+              chat_id,
+              text: `📁 <b>${item.name_snapshot}</b> (${lang === "ru" ? "Русский" : "Қазақша"})\n\n📥 <a href="${url}">Нажмите здесь, чтобы скачать файл</a>`,
+              parse_mode: "HTML"
+            });
+          }
+        } else if (path) {
+          await tg("sendMessage", { chat_id, text: `⏳ Загружаю файл (${lang === "ru" ? "Русский" : "Қазақша"})...` });
+          await sendFileToUser(
+            chat_id,
+            path,
+            name || "file.bin",
+            item.name_snapshot,
+            item.quantity || 1
+          );
+        } else {
+          await tg("sendMessage", { chat_id, text: `⚠️ Файл (${lang === "ru" ? "Русский" : "Қазақша"}) не настроен. Продавец вышлет вручную.` });
+        }
 
         // Update delivered_language tracking
         const newDeliveredLang = item.delivered_language ? "both" : lang;

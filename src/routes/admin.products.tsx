@@ -41,6 +41,8 @@ type Product = {
   file_name: string | null;
   file_path_kz?: string | null;
   file_name_kz?: string | null;
+  file_url?: string | null;
+  file_url_kz?: string | null;
   product_images?: Img[];
   country_prices?: Record<string, number>;
 };
@@ -59,6 +61,8 @@ const empty: Product = {
   file_name: null,
   file_path_kz: null,
   file_name_kz: null,
+  file_url: null,
+  file_url_kz: null,
   product_images: [],
   country_prices: {},
 };
@@ -151,6 +155,8 @@ function ProductsPage() {
       file_name: p.file_name,
       file_path_kz: p.file_path_kz,
       file_name_kz: p.file_name_kz,
+      file_url: p.file_url,
+      file_url_kz: p.file_url_kz,
       country_prices: p.country_prices || {},
     });
     const imgs = (p.product_images ?? []).slice().sort((a: Img, b: Img) => a.sort_order - b.sort_order);
@@ -211,6 +217,8 @@ function ProductsPage() {
           file_name: editing.file_name,
           file_path_kz: editing.file_path_kz,
           file_name_kz: editing.file_name_kz,
+          file_url: editing.file_url,
+          file_url_kz: editing.file_url_kz,
           image_paths: images.map((i) => i.image_path),
           country_prices: editing.country_prices,
         },
@@ -353,6 +361,14 @@ function ProductsPage() {
             {editing.file_name && (
               <p className="text-sm text-muted-foreground">📎 {editing.file_name}</p>
             )}
+            <div className="pt-2">
+              <Label>Или внешняя ссылка на файл (Русский)</Label>
+              <Input
+                value={editing.file_url || ""}
+                onChange={(e) => setEditing({ ...editing, file_url: e.target.value || null })}
+                placeholder="https://drive.google.com/..."
+              />
+            </div>
           </div>
 
           <div className="space-y-2 pt-4 border-t">
@@ -361,7 +377,15 @@ function ProductsPage() {
             {editing.file_name_kz && (
               <p className="text-sm text-muted-foreground">📎 {editing.file_name_kz}</p>
             )}
-            <p className="text-xs text-muted-foreground">
+            <div className="pt-2">
+              <Label>Или внешняя ссылка на файл (Қазақша)</Label>
+              <Input
+                value={editing.file_url_kz || ""}
+                onChange={(e) => setEditing({ ...editing, file_url_kz: e.target.value || null })}
+                placeholder="https://drive.google.com/..."
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
               Если загрузить только Русский файл, бот не будет спрашивать язык при выдаче заказа.
             </p>
           </div>
@@ -425,10 +449,10 @@ function ProductsPage() {
                         .filter(Boolean)
                         .join(", ") || "без категории"
                     : p.categories?.name || "без категории"} · {p.price} {p.currency}
-                  {!p.file_path && !p.file_path_kz && <span className="text-destructive"> · нет файла</span>}
-                  {p.file_path && p.file_path_kz && <span className="text-green-500"> · 🇷🇺🇰🇿</span>}
-                  {p.file_path && !p.file_path_kz && <span className="text-muted-foreground"> · 🇷🇺</span>}
-                  {!p.file_path && p.file_path_kz && <span className="text-muted-foreground"> · 🇰🇿</span>}
+                  {!p.file_path && !p.file_path_kz && !p.file_url && !p.file_url_kz && <span className="text-destructive"> · нет файла</span>}
+                  {(p.file_path || p.file_url) && (p.file_path_kz || p.file_url_kz) && <span className="text-green-500"> · 🇷🇺🇰🇿</span>}
+                  {(p.file_path || p.file_url) && !p.file_path_kz && !p.file_url_kz && <span className="text-muted-foreground"> · 🇷🇺</span>}
+                  {!p.file_path && !p.file_url && (p.file_path_kz || p.file_url_kz) && <span className="text-muted-foreground"> · 🇰🇿</span>}
                 </div>
               </div>
               <div className="flex gap-1 shrink-0">

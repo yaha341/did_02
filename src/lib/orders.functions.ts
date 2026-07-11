@@ -103,8 +103,10 @@ export async function deliverOrder(orderId: number) {
     const item = items[idx];
     const path_ru = item.file_path_snapshot;
     const path_kz = (item as any).file_path_kz_snapshot;
+    const url_ru = (item as any).file_url_snapshot;
+    const url_kz = (item as any).file_url_kz_snapshot;
 
-    if (!path_ru) {
+    if (!path_ru && !url_ru) {
       await tg("sendMessage", {
         chat_id: order.telegram_id,
         text: `⚠️ Файл для «${item.name_snapshot}» не настроен. Продавец вышлет вручную.`,
@@ -112,7 +114,7 @@ export async function deliverOrder(orderId: number) {
       continue;
     }
 
-    if (path_kz) {
+    if (path_kz || url_kz) {
       // Prompt for language
       await tg("sendMessage", {
         chat_id: order.telegram_id,
@@ -129,13 +131,23 @@ export async function deliverOrder(orderId: number) {
       });
     } else {
       // Send directly
-      await sendFileToUser(
-        order.telegram_id,
-        path_ru,
-        item.file_name_snapshot || "file.bin",
-        item.name_snapshot,
-        item.quantity || 1
-      );
+      if (url_ru) {
+        for (let i = 0; i < (item.quantity || 1); i++) {
+          await tg("sendMessage", {
+            chat_id: order.telegram_id,
+            text: `📁 <b>${item.name_snapshot}</b>\n\n📥 <a href="${url_ru}">Нажмите здесь, чтобы скачать файл</a>`,
+            parse_mode: "HTML"
+          });
+        }
+      } else {
+        await sendFileToUser(
+          order.telegram_id,
+          path_ru!,
+          item.file_name_snapshot || "file.bin",
+          item.name_snapshot,
+          item.quantity || 1
+        );
+      }
     }
   }
 
