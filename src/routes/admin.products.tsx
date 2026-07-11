@@ -362,7 +362,7 @@ function ProductsPage() {
             )}
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 pt-4 border-t">
             <Label>Фото (можно несколько)</Label>
             <Input
               type="file"
