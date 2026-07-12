@@ -307,19 +307,6 @@ async function startCheckout(chat_id: number, user: BotUser) {
     await tg("sendMessage", { chat_id, text: "🛒 Корзина пуста." });
     return;
   }
-  if (!user.contact_phone) {
-    await setState(telegram_id, { ...user.state, mode: "awaiting_contact" });
-    await tg("sendMessage", {
-      chat_id,
-      text: "Для оформления заказа поделитесь, пожалуйста, контактом — продавец свяжется с вами при необходимости.",
-      reply_markup: {
-        keyboard: [[{ text: "📱 Поделиться контактом", request_contact: true }]],
-        resize_keyboard: true,
-        one_time_keyboard: true,
-      },
-    });
-    return;
-  }
   
   let country_code = user.state?.country_code;
   if (!country_code) {
@@ -402,7 +389,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
       telegram_id,
       username: user?.username ?? null,
       display_name: display,
-      contact: user?.contact_phone ?? null,
+      contact: user?.contact_phone ?? user?.username ?? null,
       country_code: method?.country_code ?? country_code,
       country_name: method?.country_name ?? country_code,
       total,
@@ -856,27 +843,6 @@ export async function handleUpdate(update: any) {
     }
     if (msg.text === "/id") {
       await tg("sendMessage", { chat_id, text: `Ваш Telegram ID: ${from.id}` });
-      return;
-    }
-
-    // Contact share
-    if (msg.contact && (user.state?.mode === "awaiting_contact" || true)) {
-      await setContact(from.id, msg.contact.phone_number);
-      await tg("sendMessage", {
-        chat_id,
-        text: "Спасибо! Контакт сохранён.",
-        reply_markup: mainMenu(),
-      });
-      if (user.state?.mode === "awaiting_contact") {
-        await setState(from.id, { ...user.state, mode: "idle" });
-        let country_code = user.state?.country_code;
-        if (!country_code) {
-          const s = await db();
-          const { data: m } = await s.from("payment_methods").select("country_code").eq("is_active", true).order("sort_order").limit(1).maybeSingle();
-          country_code = m?.country_code || "KZ";
-        }
-        await placeOrder(chat_id, user, country_code);
-      }
       return;
     }
 
