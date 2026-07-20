@@ -56,7 +56,7 @@ VIP_TELEGRAM_WEBHOOK_SECRET=<random-secret-for-vip-webhook>
 CRON_SECRET=<random-secret-for-vip-cron>
 ```
 
-`CRON_SECRET` обязателен для почасового VIP cron (напоминания / кик). Vercel передаёт его как `Authorization: Bearer <CRON_SECRET>`.
+`CRON_SECRET` обязателен для почасового VIP cron (напоминания / кик) и автопочинки webhook. Vercel/cron-job.org передаёт его как `?secret=` или `Authorization: Bearer`.
 
 После изменения env — **Redeploy**.
 
@@ -139,7 +139,13 @@ curl -sS "https://did-02.vercel.app/api/public/vip/cron?secret=$CRON_SECRET"
 
 `/admin/vip/settings` → «Запустить проверку подписок сейчас» (для теста, не замена почасового cron).
 
-Ожидаемый JSON: `{ "ok": true, "warned": N, "warned2": N, "expired": N, "kickFailed": N, "errors": [] }`
+Ожидаемый JSON: `{ "ok": true, "webhooks": { "bots": [...] }, "vipCron": { ... } }`  
+Поле `webhooks` — автопочинка shop+VIP (`setWebhook`, если URL пустой или была ошибка доставки).
+
+Отдельно только хуки:
+```
+https://did-02.vercel.app/api/public/telegram/ensure-webhook?secret=$CRON_SECRET
+```
 
 ---
 
@@ -160,6 +166,7 @@ curl -sS "https://did-02.vercel.app/api/public/vip/cron?secret=$CRON_SECRET"
 
 ## Важные замечания
 
-- Без `TELEGRAM_WEBHOOK_SECRET` / `VIP_TELEGRAM_WEBHOOK_SECRET` webhooks в production отклоняются (fail-closed).
+- Без `TELEGRAM_WEBHOOK_SECRET` / `VIP_TELEGRAM_WEBHOOK_SECRET` запросы принимаются (с warn в лог). Лучше задать секреты + `secret_token` на setWebhook.
 - Не используйте дефолтные `admin`/`admin` и слабый `SESSION_SECRET` в production.
 - Оплата в did_02 — скриншот + ручное подтверждение (автоэквайринг не подключён).
+- Хуки «слетают» (пустой URL / ошибка доставки) — cron `/api/public/vip/cron` каждый час вызывает `ensureDidWebhooks` и ставит URL обратно.
