@@ -127,6 +127,110 @@ async function getVipSettings() {
   return map;
 }
 
+const BTN_RENEW = "🔄 Продлить";
+const BTN_STATUS = "📋 Мой статус";
+const BTN_ID = "🆔 Мой ID";
+const BTN_HELP = "ℹ️ Помощь";
+
+function mainMenuKeyboard() {
+  return {
+    keyboard: [
+      [{ text: BTN_RENEW }, { text: BTN_STATUS }],
+      [{ text: BTN_ID }, { text: BTN_HELP }],
+    ],
+    resize_keyboard: true,
+    is_persistent: true,
+  };
+}
+
+async function sendWithMenu(chat_id: number, text: string, extra?: Record<string, unknown>) {
+  await tgVip("sendMessage", {
+    chat_id,
+    text,
+    reply_markup: mainMenuKeyboard(),
+    ...extra,
+  });
+}
+
+async function showStatus(chat_id: number, telegram_id: number) {
+  const s = await db();
+  const now = new Date();
+  const { data: active } = await s
+    .from("vip_subscriptions")
+    .select("expires_at, status, vip_tariffs(name, price, currency)")
+    .eq("telegram_id", telegram_id)
+    .eq("status", "active")
+    .gt("expires_at", now.toISOString())
+    .order("expires_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (active) {
+    const tariff = active.vip_tariffs as { name?: string; price?: number; currency?: string } | null;
+    const until = new Date(active.expires_at as string).toLocaleString("ru-RU");
+    await sendWithMenu(
+      chat_id,
+      `📋 <b>Ваш VIP статус</b>\n\n` +
+        `Статус: <b>активен</b>\n` +
+        `Тариф: ${escapeHtml(String(tariff?.name ?? "—"))}\n` +
+        `Действует до: <b>${escapeHtml(until)}</b>\n\n` +
+        `Чтобы продлить заранее — нажмите «${BTN_RENEW}».`,
+      { parse_mode: "HTML" },
+    );
+    return;
+  }
+
+  const { data: pending } = await s
+    .from("vip_subscriptions")
+    .select("id, vip_tariffs(name, price, currency)")
+    .eq("telegram_id", telegram_id)
+    .eq("status", "pending_payment")
+    .maybeSingle();
+
+  if (pending) {
+    const tariff = pending.vip_tariffs as { name?: string; price?: number; currency?: string } | null;
+    await sendWithMenu(
+      chat_id,
+      `📋 <b>Ваш VIP статус</b>\n\n` +
+        `Статус: <b>ожидает подтверждения оплаты</b>\n` +
+        `Тариф: ${escapeHtml(String(tariff?.name ?? "—"))}\n\n` +
+        `Если ещё не отправили чек — пришлите скриншот оплаты в этот чат.`,
+      { parse_mode: "HTML" },
+    );
+    return;
+  }
+
+  await sendWithMenu(
+    chat_id,
+    `📋 <b>Ваш VIP статус</b>\n\nСейчас нет активной подписки.\nНажмите «${BTN_RENEW}» или /start, чтобы оформить доступ.`,
+    { parse_mode: "HTML" },
+  );
+}
+
+async function showHelp(chat_id: number) {
+  await sendWithMenu(
+    chat_id,
+    `ℹ️ <b>Помощь VIP</b>\n\n` +
+      `• <b>${BTN_RENEW}</b> — выбрать тариф / продлить доступ\n` +
+      `• <b>${BTN_STATUS}</b> — срок подписки и статус оплаты\n` +
+      `• <b>${BTN_ID}</b> — ваш Telegram ID (для ручного добавления)\n` +
+      `• После оплаты пришлите <b>фото чека</b> в этот чат\n\n` +
+      `Команды: /start — меню, /id — ваш ID`,
+    { parse_mode: "HTML" },
+  );
+}
+
+async function showMyId(chat_id: number, from: any) {
+  const from_id = from?.id;
+  const un = from?.username ? `\nUsername: @${escapeHtml(String(from.username))}` : "";
+  await sendWithMenu(
+    chat_id,
+    `Ваш Telegram ID: <code>${from_id}</code>${un}\n\nЭтот ID нужен для ручного добавления в VIP-админке.`,
+    { parse_mode: "HTML" },
+  );
+}
+
+
 /** True if Telegram error means user is already not in the group. */
 export function isAlreadyNotInChat(description?: string): boolean {
   if (!description) return false;
@@ -291,6 +395,13 @@ async function handleTariffDeepLink(chat_id: number, from: any, tariffId: string
 
 /** /start or /start renew */
 async function showStartFlow(chat_id: number, from: any, renew?: boolean) {
+  await sendWithMenu(
+    chat_id,
+    renew
+      ? "Продление VIP — кнопки меню всегда внизу. Выберите тариф ниже."
+      : "Добро пожаловать в VIP-бот. Меню внизу экрана — тарифы ниже.",
+  );
+
   const s = await db();
   const assigned = await getMemberAssignedTariff(s, from.id);
 
@@ -560,6 +671,7 @@ export async function handleVipUpdate(update: any) {
         if (payload.startsWith("t_")) {
           const tariffId = payload.slice(2);
           if (/^[0-9a-f-]{36}$/i.test(tariffId)) {
+            await sendWithMenu(chat_id, "Меню VIP закреплено внизу.");
             await handleTariffDeepLink(chat_id, msg.from, tariffId);
             return;
           }
@@ -568,13 +680,23 @@ export async function handleVipUpdate(update: any) {
         return;
       }
 
-      if (text === "/id" || text.startsWith("/id@")) {
-        const un = msg.from?.username ? `\nUsername: @${msg.from.username}` : "";
-        await tgVip("sendMessage", {
-          chat_id,
-          text: `Ваш Telegram ID: <code>${from_id}</code>${un}\n\nЭтот ID нужен для ручного добавления в VIP-админке.`,
-          parse_mode: "HTML",
-        });
+      if (text === "/id" || text.startsWith("/id@") || text === BTN_ID) {
+        await showMyId(chat_id, msg.from);
+        return;
+      }
+
+      if (text === BTN_RENEW || text === "/renew") {
+        await showStartFlow(chat_id, msg.from, true);
+        return;
+      }
+
+      if (text === BTN_STATUS || text === "/status") {
+        await showStatus(chat_id, from_id);
+        return;
+      }
+
+      if (text === BTN_HELP || text === "/help") {
+        await showHelp(chat_id);
         return;
       }
 
