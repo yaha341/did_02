@@ -18,7 +18,7 @@ const env = Object.fromEntries(
     }),
 );
 
-const base = "https://razvivashka.vercel.app";
+const base = process.env.PUBLIC_APP_URL || "https://did-02.vercel.app";
 const shopSecret = env.TELEGRAM_WEBHOOK_SECRET || "";
 const vipSecret = env.VIP_TELEGRAM_WEBHOOK_SECRET || env.TELEGRAM_WEBHOOK_SECRET || "";
 

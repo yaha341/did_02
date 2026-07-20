@@ -13,12 +13,18 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as AdminVipRouteImport } from './routes/admin.vip'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminProductsRouteImport } from './routes/admin.products'
 import { Route as AdminPaymentMethodsRouteImport } from './routes/admin.payment-methods'
 import { Route as AdminOrdersRouteImport } from './routes/admin.orders'
 import { Route as AdminCategoriesRouteImport } from './routes/admin.categories'
+import { Route as AdminVipIndexRouteImport } from './routes/admin.vip.index'
 import { Route as ApiAdminUploadRouteImport } from './routes/api/admin/upload'
+import { Route as AdminVipTariffsRouteImport } from './routes/admin.vip.tariffs'
+import { Route as AdminVipSubscribersRouteImport } from './routes/admin.vip.subscribers'
+import { Route as AdminVipSettingsRouteImport } from './routes/admin.vip.settings'
+import { Route as ApiPublicTelegramWebhookVipRouteImport } from './routes/api/public/telegram/webhook-vip'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram/webhook'
 import { Route as ApiPublicImgSplatRouteImport } from './routes/api/public/img/$'
 import { Route as ApiAdminFileSplatRouteImport } from './routes/api/admin/file/$'
@@ -41,6 +47,11 @@ const IndexRoute = IndexRouteImport.update({
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminVipRoute = AdminVipRouteImport.update({
+  id: '/vip',
+  path: '/vip',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminSettingsRoute = AdminSettingsRouteImport.update({
@@ -68,11 +79,37 @@ const AdminCategoriesRoute = AdminCategoriesRouteImport.update({
   path: '/categories',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminVipIndexRoute = AdminVipIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminVipRoute,
+} as any)
 const ApiAdminUploadRoute = ApiAdminUploadRouteImport.update({
   id: '/api/admin/upload',
   path: '/api/admin/upload',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminVipTariffsRoute = AdminVipTariffsRouteImport.update({
+  id: '/tariffs',
+  path: '/tariffs',
+  getParentRoute: () => AdminVipRoute,
+} as any)
+const AdminVipSubscribersRoute = AdminVipSubscribersRouteImport.update({
+  id: '/subscribers',
+  path: '/subscribers',
+  getParentRoute: () => AdminVipRoute,
+} as any)
+const AdminVipSettingsRoute = AdminVipSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AdminVipRoute,
+} as any)
+const ApiPublicTelegramWebhookVipRoute =
+  ApiPublicTelegramWebhookVipRouteImport.update({
+    id: '/api/public/telegram/webhook-vip',
+    path: '/api/public/telegram/webhook-vip',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicTelegramWebhookRoute =
   ApiPublicTelegramWebhookRouteImport.update({
     id: '/api/public/telegram/webhook',
@@ -99,11 +136,17 @@ export interface FileRoutesByFullPath {
   '/admin/payment-methods': typeof AdminPaymentMethodsRoute
   '/admin/products': typeof AdminProductsRoute
   '/admin/settings': typeof AdminSettingsRoute
+  '/admin/vip': typeof AdminVipRouteWithChildren
   '/admin/': typeof AdminIndexRoute
+  '/admin/vip/settings': typeof AdminVipSettingsRoute
+  '/admin/vip/subscribers': typeof AdminVipSubscribersRoute
+  '/admin/vip/tariffs': typeof AdminVipTariffsRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
+  '/admin/vip/': typeof AdminVipIndexRoute
   '/api/admin/file/$': typeof ApiAdminFileSplatRoute
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
+  '/api/public/telegram/webhook-vip': typeof ApiPublicTelegramWebhookVipRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -114,10 +157,15 @@ export interface FileRoutesByTo {
   '/admin/products': typeof AdminProductsRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin': typeof AdminIndexRoute
+  '/admin/vip/settings': typeof AdminVipSettingsRoute
+  '/admin/vip/subscribers': typeof AdminVipSubscribersRoute
+  '/admin/vip/tariffs': typeof AdminVipTariffsRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
+  '/admin/vip': typeof AdminVipIndexRoute
   '/api/admin/file/$': typeof ApiAdminFileSplatRoute
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
+  '/api/public/telegram/webhook-vip': typeof ApiPublicTelegramWebhookVipRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -129,11 +177,17 @@ export interface FileRoutesById {
   '/admin/payment-methods': typeof AdminPaymentMethodsRoute
   '/admin/products': typeof AdminProductsRoute
   '/admin/settings': typeof AdminSettingsRoute
+  '/admin/vip': typeof AdminVipRouteWithChildren
   '/admin/': typeof AdminIndexRoute
+  '/admin/vip/settings': typeof AdminVipSettingsRoute
+  '/admin/vip/subscribers': typeof AdminVipSubscribersRoute
+  '/admin/vip/tariffs': typeof AdminVipTariffsRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
+  '/admin/vip/': typeof AdminVipIndexRoute
   '/api/admin/file/$': typeof ApiAdminFileSplatRoute
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
+  '/api/public/telegram/webhook-vip': typeof ApiPublicTelegramWebhookVipRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -146,11 +200,17 @@ export interface FileRouteTypes {
     | '/admin/payment-methods'
     | '/admin/products'
     | '/admin/settings'
+    | '/admin/vip'
     | '/admin/'
+    | '/admin/vip/settings'
+    | '/admin/vip/subscribers'
+    | '/admin/vip/tariffs'
     | '/api/admin/upload'
+    | '/admin/vip/'
     | '/api/admin/file/$'
     | '/api/public/img/$'
     | '/api/public/telegram/webhook'
+    | '/api/public/telegram/webhook-vip'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -161,10 +221,15 @@ export interface FileRouteTypes {
     | '/admin/products'
     | '/admin/settings'
     | '/admin'
+    | '/admin/vip/settings'
+    | '/admin/vip/subscribers'
+    | '/admin/vip/tariffs'
     | '/api/admin/upload'
+    | '/admin/vip'
     | '/api/admin/file/$'
     | '/api/public/img/$'
     | '/api/public/telegram/webhook'
+    | '/api/public/telegram/webhook-vip'
   id:
     | '__root__'
     | '/'
@@ -175,11 +240,17 @@ export interface FileRouteTypes {
     | '/admin/payment-methods'
     | '/admin/products'
     | '/admin/settings'
+    | '/admin/vip'
     | '/admin/'
+    | '/admin/vip/settings'
+    | '/admin/vip/subscribers'
+    | '/admin/vip/tariffs'
     | '/api/admin/upload'
+    | '/admin/vip/'
     | '/api/admin/file/$'
     | '/api/public/img/$'
     | '/api/public/telegram/webhook'
+    | '/api/public/telegram/webhook-vip'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -190,6 +261,7 @@ export interface RootRouteChildren {
   ApiAdminFileSplatRoute: typeof ApiAdminFileSplatRoute
   ApiPublicImgSplatRoute: typeof ApiPublicImgSplatRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
+  ApiPublicTelegramWebhookVipRoute: typeof ApiPublicTelegramWebhookVipRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -220,6 +292,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/admin/'
       preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/vip': {
+      id: '/admin/vip'
+      path: '/vip'
+      fullPath: '/admin/vip'
+      preLoaderRoute: typeof AdminVipRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/settings': {
@@ -257,11 +336,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminCategoriesRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/vip/': {
+      id: '/admin/vip/'
+      path: '/'
+      fullPath: '/admin/vip/'
+      preLoaderRoute: typeof AdminVipIndexRouteImport
+      parentRoute: typeof AdminVipRoute
+    }
     '/api/admin/upload': {
       id: '/api/admin/upload'
       path: '/api/admin/upload'
       fullPath: '/api/admin/upload'
       preLoaderRoute: typeof ApiAdminUploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/vip/tariffs': {
+      id: '/admin/vip/tariffs'
+      path: '/tariffs'
+      fullPath: '/admin/vip/tariffs'
+      preLoaderRoute: typeof AdminVipTariffsRouteImport
+      parentRoute: typeof AdminVipRoute
+    }
+    '/admin/vip/subscribers': {
+      id: '/admin/vip/subscribers'
+      path: '/subscribers'
+      fullPath: '/admin/vip/subscribers'
+      preLoaderRoute: typeof AdminVipSubscribersRouteImport
+      parentRoute: typeof AdminVipRoute
+    }
+    '/admin/vip/settings': {
+      id: '/admin/vip/settings'
+      path: '/settings'
+      fullPath: '/admin/vip/settings'
+      preLoaderRoute: typeof AdminVipSettingsRouteImport
+      parentRoute: typeof AdminVipRoute
+    }
+    '/api/public/telegram/webhook-vip': {
+      id: '/api/public/telegram/webhook-vip'
+      path: '/api/public/telegram/webhook-vip'
+      fullPath: '/api/public/telegram/webhook-vip'
+      preLoaderRoute: typeof ApiPublicTelegramWebhookVipRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/telegram/webhook': {
@@ -288,12 +402,31 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AdminVipRouteChildren {
+  AdminVipSettingsRoute: typeof AdminVipSettingsRoute
+  AdminVipSubscribersRoute: typeof AdminVipSubscribersRoute
+  AdminVipTariffsRoute: typeof AdminVipTariffsRoute
+  AdminVipIndexRoute: typeof AdminVipIndexRoute
+}
+
+const AdminVipRouteChildren: AdminVipRouteChildren = {
+  AdminVipSettingsRoute: AdminVipSettingsRoute,
+  AdminVipSubscribersRoute: AdminVipSubscribersRoute,
+  AdminVipTariffsRoute: AdminVipTariffsRoute,
+  AdminVipIndexRoute: AdminVipIndexRoute,
+}
+
+const AdminVipRouteWithChildren = AdminVipRoute._addFileChildren(
+  AdminVipRouteChildren,
+)
+
 interface AdminRouteChildren {
   AdminCategoriesRoute: typeof AdminCategoriesRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
   AdminPaymentMethodsRoute: typeof AdminPaymentMethodsRoute
   AdminProductsRoute: typeof AdminProductsRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
+  AdminVipRoute: typeof AdminVipRouteWithChildren
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
@@ -303,6 +436,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminPaymentMethodsRoute: AdminPaymentMethodsRoute,
   AdminProductsRoute: AdminProductsRoute,
   AdminSettingsRoute: AdminSettingsRoute,
+  AdminVipRoute: AdminVipRouteWithChildren,
   AdminIndexRoute: AdminIndexRoute,
 }
 
@@ -316,6 +450,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAdminFileSplatRoute: ApiAdminFileSplatRoute,
   ApiPublicImgSplatRoute: ApiPublicImgSplatRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
+  ApiPublicTelegramWebhookVipRoute: ApiPublicTelegramWebhookVipRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
