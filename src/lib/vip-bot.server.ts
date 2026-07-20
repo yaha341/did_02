@@ -244,7 +244,7 @@ export function isAlreadyNotInChat(description?: string): boolean {
   );
 }
 
-async function showTariffs(chat_id: number, opts?: { renew?: boolean }) {
+async function showTariffs(chat_id: number, opts?: { renew?: boolean; inGroup?: boolean }) {
   const s = await db();
   // Renewal list: public active tariffs, but never the first-entry package
   let q = s
@@ -277,9 +277,12 @@ async function showTariffs(chat_id: number, opts?: { renew?: boolean }) {
     { text: `${t.name} — ${t.price} ${t.currency}`, callback_data: `buy_tariff:${t.id}` },
   ]);
 
-  const intro = opts?.renew
-    ? "Продление VIP: выберите тариф. После подтверждения оплаты доступ продолжится без исключения из группы."
-    : "Выберите тариф для продления VIP-подписки:";
+  // Copy must match reality: don't promise "stay in group" if user is not a member
+  const intro = opts?.inGroup
+    ? "Продление VIP: выберите тариф. После оплаты срок продлится — вы останетесь в группе, новая ссылка не нужна."
+    : opts?.renew
+      ? "Выберите тариф. После подтверждения оплаты пришлём одноразовую ссылку для вступления в группу."
+      : "Выберите тариф для VIP-подписки:";
 
   await tgVip("sendMessage", {
     chat_id,
@@ -393,24 +396,34 @@ async function handleTariffDeepLink(chat_id: number, from: any, tariffId: string
   await handleBuyTariff(chat_id, from.id, from, tariff.id);
 }
 
-/** /start or /start renew */
+/** /start or /start renew (кнопка «Продлить») */
 async function showStartFlow(chat_id: number, from: any, renew?: boolean) {
+  const s = await db();
+  const hadAccess = await userHadPaidAccess(s, from.id);
+  const settings = await getVipSettings();
+  const groupId = (settings.vip_group_id || "").trim();
+  const inGroup = groupId ? await isVipGroupMember(groupId, from.id) : false;
+
+  // «Продлить» без истории оплаты = первый вход, не текст про «останётесь в группе»
+  const wantRenew = !!(renew && hadAccess);
+
   await sendWithMenu(
     chat_id,
-    renew
-      ? "Продление VIP — кнопки меню всегда внизу. Выберите тариф ниже."
+    wantRenew
+      ? inGroup
+        ? "Продление VIP — кнопки меню внизу. Выберите тариф ниже."
+        : "Возврат в VIP — выберите тариф ниже. После оплаты придёт одноразовая ссылка в группу."
       : "Добро пожаловать в VIP-бот. Меню внизу экрана — тарифы ниже.",
   );
 
-  const s = await db();
   const assigned = await getMemberAssignedTariff(s, from.id);
 
   // Personal (legacy/cheap) renew — skip entry fee, but allow switching to public list
-  if (assigned && !(assigned as any).is_entry) {
+  if (assigned && !(assigned as any).is_entry && (wantRenew || hadAccess)) {
     const t = assigned as any;
-    const intro = renew
+    const intro = inGroup
       ? `Продление VIP — ваш персональный тариф:\n<b>${escapeHtml(String(t.name))}</b> — ${escapeHtml(String(t.price))} ${escapeHtml(String(t.currency))}`
-      : `Ваш персональный тариф VIP:\n<b>${escapeHtml(String(t.name))}</b> — ${escapeHtml(String(t.price))} ${escapeHtml(String(t.currency))}`;
+      : `Ваш персональный тариф VIP:\n<b>${escapeHtml(String(t.name))}</b> — ${escapeHtml(String(t.price))} ${escapeHtml(String(t.currency))}\n\nПосле оплаты — одноразовая ссылка в группу.`;
     await tgVip("sendMessage", {
       chat_id,
       text: intro,
@@ -425,11 +438,9 @@ async function showStartFlow(chat_id: number, from: any, renew?: boolean) {
     return;
   }
 
-  const hadAccess = await userHadPaidAccess(s, from.id);
-
-  // Renew button or returning member → renew tariffs
-  if (renew || hadAccess) {
-    await showTariffs(chat_id, { renew: true });
+  // Returning member (or renew with history) → renew tariffs
+  if (wantRenew || hadAccess) {
+    await showTariffs(chat_id, { renew: true, inGroup });
     return;
   }
 
@@ -454,11 +465,14 @@ async function handleBuyTariff(chat_id: number, telegram_id: number, user: any, 
   if (tariff.is_entry) {
     const hadAccess = await userHadPaidAccess(s, telegram_id);
     if (hadAccess) {
+      const settings = await getVipSettings();
+      const groupId = (settings.vip_group_id || "").trim();
+      const inGroup = groupId ? await isVipGroupMember(groupId, telegram_id) : false;
       await tgVip("sendMessage", {
         chat_id,
         text: "Тариф «Первый вход» доступен только новым участникам. Выберите тариф продления:",
       });
-      await showTariffs(chat_id, { renew: true });
+      await showTariffs(chat_id, { renew: true, inGroup });
       return;
     }
   }
@@ -738,7 +752,10 @@ export async function handleVipUpdate(update: any) {
       }
 
       if (data === "buy_renew_public") {
-        await showTariffs(chat_id, { renew: true });
+        const settings = await getVipSettings();
+        const groupId = (settings.vip_group_id || "").trim();
+        const inGroup = groupId ? await isVipGroupMember(groupId, from_id) : false;
+        await showTariffs(chat_id, { renew: true, inGroup });
         return;
       }
 
