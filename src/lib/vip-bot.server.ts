@@ -539,47 +539,83 @@ async function handleBuyTariff(chat_id: number, telegram_id: number, user: any, 
         .eq("status", "pending_payment");
     }
   } else {
-    const { error } = await s.from("vip_subscriptions").insert({
-      telegram_id,
-      username: user?.username ?? null,
-      first_name: user?.first_name ?? null,
-      last_name: user?.last_name ?? null,
-      tariff_id,
-      status: "pending_payment",
-      expires_at: new Date().toISOString(),
-    });
-    if (error) {
-      await tgVip("sendMessage", { chat_id, text: "Не удалось создать заявку. Попробуйте позже." });
-      console.error("[vip-bot] insert pending failed", error);
-      return;
-    }
-
-    // After insert, collapse concurrent race duplicates — keep newest
-    const { data: allPending } = await s
+    // Не плодим «Отклонённые»: переиспользуем последнюю cancelled вместо новой строки
+    const { data: cancelledRows } = await s
       .from("vip_subscriptions")
-      .select("id, created_at")
+      .select("id")
       .eq("telegram_id", telegram_id)
-      .eq("status", "pending_payment")
+      .eq("status", "cancelled")
       .order("created_at", { ascending: false });
 
-    if ((allPending?.length ?? 0) > 1) {
-      const keepId = allPending![0].id;
-      const olderIds = allPending!.slice(1).map((p) => p.id);
-      await s
+    const reuseId = cancelledRows?.[0]?.id as string | undefined;
+    if (reuseId) {
+      const { error } = await s
         .from("vip_subscriptions")
         .update({
           tariff_id,
+          status: "pending_payment",
           payment_proof_path: null,
+          group_invite_link: null,
+          admin_note: null,
           username: user?.username ?? null,
           first_name: user?.first_name ?? null,
           last_name: user?.last_name ?? null,
+          expires_at: new Date().toISOString(),
         })
-        .eq("id", keepId);
-      await s
+        .eq("id", reuseId)
+        .eq("status", "cancelled");
+      if (error) {
+        await tgVip("sendMessage", { chat_id, text: "Не удалось создать заявку. Попробуйте позже." });
+        console.error("[vip-bot] reuse cancelled failed", error);
+        return;
+      }
+      const extraIds = (cancelledRows ?? []).slice(1).map((r) => r.id);
+      if (extraIds.length > 0) {
+        await s.from("vip_subscriptions").delete().in("id", extraIds);
+      }
+    } else {
+      const { error } = await s.from("vip_subscriptions").insert({
+        telegram_id,
+        username: user?.username ?? null,
+        first_name: user?.first_name ?? null,
+        last_name: user?.last_name ?? null,
+        tariff_id,
+        status: "pending_payment",
+        expires_at: new Date().toISOString(),
+      });
+      if (error) {
+        await tgVip("sendMessage", { chat_id, text: "Не удалось создать заявку. Попробуйте позже." });
+        console.error("[vip-bot] insert pending failed", error);
+        return;
+      }
+
+      // After insert, collapse concurrent race duplicates — keep newest
+      const { data: allPending } = await s
         .from("vip_subscriptions")
-        .update({ status: "cancelled" })
-        .in("id", olderIds)
-        .eq("status", "pending_payment");
+        .select("id, created_at")
+        .eq("telegram_id", telegram_id)
+        .eq("status", "pending_payment")
+        .order("created_at", { ascending: false });
+
+      if ((allPending?.length ?? 0) > 1) {
+        const keepId = allPending![0].id;
+        const olderIds = allPending!.slice(1).map((p) => p.id);
+        await s
+          .from("vip_subscriptions")
+          .update({
+            tariff_id,
+            payment_proof_path: null,
+            username: user?.username ?? null,
+            first_name: user?.first_name ?? null,
+            last_name: user?.last_name ?? null,
+          })
+          .eq("id", keepId);
+        await s
+          .from("vip_subscriptions")
+          .update({ status: "cancelled" })
+          .in("id", olderIds)
+          .eq("status", "pending_payment");
+      }
     }
   }
 
@@ -596,7 +632,7 @@ async function handlePhoto(chat_id: number, from_id: number, photoId: string) {
   const s = await db();
   const { data: pendingSub } = await s
     .from("vip_subscriptions")
-    .select("id, tariff_id, payment_proof_path, vip_tariffs(name, price, currency)")
+    .select("id, tariff_id, payment_proof_path, updated_at, vip_tariffs(name, price, currency)")
     .eq("telegram_id", from_id)
     .eq("status", "pending_payment")
     .maybeSingle();
@@ -610,11 +646,17 @@ async function handlePhoto(chat_id: number, from_id: number, photoId: string) {
   }
 
   const isResubmit = !!pendingSub.payment_proof_path;
+  const lastTouch = pendingSub.updated_at ? new Date(pendingSub.updated_at as string).getTime() : 0;
+  const PHOTO_COOLDOWN_MS = 60_000;
+  // Повторные чеки чаще 1/мин — сохраняем, но не спамим админов в Telegram
+  const notifyAdmins = !isResubmit || Date.now() - lastTouch >= PHOTO_COOLDOWN_MS;
 
   await tgVip("sendMessage", {
     chat_id,
     text: isResubmit
-      ? "✅ Новый чек получен! Предыдущий заменён. Ожидайте подтверждения администратором."
+      ? notifyAdmins
+        ? "✅ Новый чек получен! Предыдущий заменён. Ожидайте подтверждения администратором."
+        : "✅ Чек обновлён. Не присылайте чаще раза в минуту — админ уже уведомлён."
       : "✅ Чек получен! Ожидайте подтверждения администратором. После проверки вы получите доступ к VIP-группе.",
   });
 
@@ -658,6 +700,8 @@ async function handlePhoto(chat_id: number, from_id: number, photoId: string) {
   } else {
     console.error("[vip-bot] failed to download payment proof from Telegram");
   }
+
+  if (!notifyAdmins) return;
 
   const caption = proofSaved
     ? adminText

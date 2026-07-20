@@ -365,6 +365,14 @@ export async function rejectVipSubscriptionCore(id: string): Promise<{ ok: true;
     return { ok: true, alreadyProcessed: true };
   }
 
+  // Одна «отклонённая» на человека — старые cancelled не копятся в админке
+  await s
+    .from("vip_subscriptions")
+    .delete()
+    .eq("telegram_id", updated.telegram_id)
+    .eq("status", "cancelled")
+    .neq("id", id);
+
   await tgVip("sendMessage", {
     chat_id: updated.telegram_id,
     text: "❌ Ваша оплата была отклонена. Если это ошибка, свяжитесь с поддержкой.",

@@ -21,7 +21,7 @@ export const Route = createFileRoute("/admin/vip/subscribers")({
 
 function AdminVipSubscribers() {
   const qc = useQueryClient();
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("pending_payment");
   
   const subs = useQuery({
     queryKey: ["vip_subs", statusFilter],
