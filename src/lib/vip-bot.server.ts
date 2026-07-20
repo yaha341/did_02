@@ -399,6 +399,29 @@ async function handleTariffDeepLink(chat_id: number, from: any, tariffId: string
 /** /start or /start renew (кнопка «Продлить») */
 async function showStartFlow(chat_id: number, from: any, renew?: boolean) {
   const s = await db();
+
+  // Уже ждёт подтверждения оплаты — не предлагаем новый тариф / «первый вход»
+  const { data: pending } = await s
+    .from("vip_subscriptions")
+    .select("id, vip_tariffs(name, price, currency)")
+    .eq("telegram_id", from.id)
+    .eq("status", "pending_payment")
+    .maybeSingle();
+
+  if (pending) {
+    const tariff = pending.vip_tariffs as { name?: string; price?: number; currency?: string } | null;
+    await sendWithMenu(
+      chat_id,
+      `⏳ У вас уже есть заявка <b>в ожидании подтверждения оплаты</b>.\n` +
+        `Тариф: ${escapeHtml(String(tariff?.name ?? "—"))}\n\n` +
+        `Новый тариф оформлять не нужно.\n` +
+        `Если чек ещё не отправили — пришлите скриншот оплаты в этот чат.\n` +
+        `Статус можно посмотреть кнопкой «${BTN_STATUS}».`,
+      { parse_mode: "HTML" },
+    );
+    return;
+  }
+
   const hadAccess = await userHadPaidAccess(s, from.id);
   const settings = await getVipSettings();
   const groupId = (settings.vip_group_id || "").trim();
@@ -752,6 +775,24 @@ export async function handleVipUpdate(update: any) {
       }
 
       if (data === "buy_renew_public") {
+        const s = await db();
+        const { data: pending } = await s
+          .from("vip_subscriptions")
+          .select("id, vip_tariffs(name)")
+          .eq("telegram_id", from_id)
+          .eq("status", "pending_payment")
+          .maybeSingle();
+        if (pending) {
+          const tariff = pending.vip_tariffs as { name?: string } | null;
+          await sendWithMenu(
+            chat_id,
+            `⏳ Заявка уже ждёт подтверждения оплаты` +
+              (tariff?.name ? ` (${escapeHtml(String(tariff.name))})` : "") +
+              `.\nПришлите чек, если ещё не отправили.`,
+            { parse_mode: "HTML" },
+          );
+          return;
+        }
         const settings = await getVipSettings();
         const groupId = (settings.vip_group_id || "").trim();
         const inGroup = groupId ? await isVipGroupMember(groupId, from_id) : false;
