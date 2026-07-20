@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { getVipSubscriptions, getVipMemberProfiles, addVipSubscriptionManual, extendVipSubscription, deleteVipSubscription, confirmVipSubscription, rejectVipSubscription } from "@/lib/vip-subscriptions.functions";
+import { getVipSubscriptions, getVipMemberProfiles, addVipSubscriptionManual, extendVipSubscription, deleteVipSubscription, confirmVipSubscription, rejectVipSubscription, excludeVipFromCommunity } from "@/lib/vip-subscriptions.functions";
 import { getVipTariffs } from "@/lib/vip-tariffs.functions";
 import { paymentProofKind } from "@/lib/file-mime";
 import { Button } from "@/components-ui/button";
@@ -82,8 +82,23 @@ function AdminVipSubscribers() {
     }
   };
 
+  const handleExclude = async (id: string) => {
+    if (
+      !confirm(
+        "Исключить из VIP-сообщества?\n\nЧеловека кикнут из группы, активные подписки станут «Истёкшие», он получит сообщение в боте.",
+      )
+    )
+      return;
+    try {
+      await excludeVipFromCommunity({ data: { id } });
+      qc.invalidateQueries({ queryKey: ["vip_subs"] });
+    } catch (e: any) {
+      alert("Ошибка: " + e.message);
+    }
+  };
+
   const handleDelete = async (id: string) => {
-    if (!confirm("Удалить подписку?\n\nЕсли у человека больше не останется записей — бот забудет его (личный тариф и «уже был в VIP»), и снова покажет «Первый вход».")) return;
+    if (!confirm("Удалить подписку?\n\nЕсли у человека больше не останется записей — бот забудет его (личный тариф и «уже был в VIP»), и снова покажет «Первый вход».\n\nДля кика из группы лучше «Исключить».")) return;
     await deleteVipSubscription({ data: { id } });
     qc.invalidateQueries({ queryKey: ["vip_subs"] });
     qc.invalidateQueries({ queryKey: ["vip_profiles"] });
@@ -205,6 +220,16 @@ function AdminVipSubscribers() {
                   )}
                   {s.status !== "pending_payment" && (
                     <Button variant="outline" size="sm" onClick={() => handleExtend(s.id)}>Продлить</Button>
+                  )}
+                  {s.status === "active" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-amber-700 border-amber-300"
+                      onClick={() => handleExclude(s.id)}
+                    >
+                      Исключить
+                    </Button>
                   )}
                   <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDelete(s.id)}>Удалить</Button>
                 </td>

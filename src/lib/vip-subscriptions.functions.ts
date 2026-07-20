@@ -551,6 +551,71 @@ export const extendVipSubscription = createServerFn({ method: "POST" })
 
 const DeleteInput = z.object({ id: z.string().uuid() });
 
+/** Kick from VIP group + expire access. Keeps history (status → expired). */
+export const excludeVipFromCommunity = createServerFn({ method: "POST" })
+  .validator((d: unknown) => DeleteInput.parse(d))
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    const s = await db();
+
+    const { data: sub } = await s.from("vip_subscriptions").select("*").eq("id", data.id).maybeSingle();
+    if (!sub) throw new Error("Подписка не найдена");
+
+    const telegramId = sub.telegram_id as number;
+
+    const { data: settingsData } = await s.from("app_settings").select("*");
+    const settings: Record<string, string> = {};
+    for (const r of settingsData ?? []) settings[r.key as string] = (r.value as string) ?? "";
+    const groupId = (settings.vip_group_id || "").trim();
+    if (!groupId) throw new Error("vip_group_id не настроен в /admin/vip/settings");
+
+    const { data: userSubs } = await s
+      .from("vip_subscriptions")
+      .select("id, status, group_invite_link")
+      .eq("telegram_id", telegramId)
+      .in("status", ["active", "pending_payment"]);
+
+    for (const row of userSubs ?? []) {
+      await revokeVipInvite(groupId, row.group_invite_link as string | null);
+    }
+
+    const ban = await tgVip("banChatMember", {
+      chat_id: groupId,
+      user_id: telegramId,
+      revoke_messages: false,
+    });
+    if (!ban.ok && !isAlreadyNotInChat(ban.description)) {
+      throw new Error(ban.description || "Не удалось исключить из группы (бот админ? право ban users?)");
+    }
+    await tgVip("unbanChatMember", {
+      chat_id: groupId,
+      user_id: telegramId,
+      only_if_banned: true,
+    });
+
+    await s
+      .from("vip_subscriptions")
+      .update({ status: "expired", group_invite_link: null, admin_note: "admin_excluded" })
+      .eq("telegram_id", telegramId)
+      .eq("status", "active");
+
+    await s
+      .from("vip_subscriptions")
+      .update({ status: "cancelled", group_invite_link: null })
+      .eq("telegram_id", telegramId)
+      .eq("status", "pending_payment");
+
+    await tgVip("sendMessage", {
+      chat_id: telegramId,
+      text:
+        `❌ <b>Доступ к VIP-сообществу отозван администратором.</b>\n\n` +
+        `Вы исключены из группы. Чтобы вернуться — оформите подписку заново в боте.`,
+      parse_mode: "HTML",
+    });
+
+    return { ok: true };
+  });
+
 export const deleteVipSubscription = createServerFn({ method: "POST" })
   .validator((d: unknown) => DeleteInput.parse(d))
   .handler(async ({ data }) => {
