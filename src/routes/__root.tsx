@@ -10,7 +10,6 @@ import {
 import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
-import { reportLovableError } from "../lib/lovable-error-reporting";
 
 function NotFoundComponent() {
   return (
@@ -37,9 +36,6 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
-  useEffect(() => {
-    reportLovableError(error, { boundary: "tanstack_root_error_component" });
-  }, [error]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -77,18 +73,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "A Telegram bot for selling digital educational materials, acting as a catalog and order processing system." },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "A Telegram bot for selling digital educational materials, acting as a catalog and order processing system." },
+      { title: "Telegram Shop Bot" },
+      { name: "description", content: "Telegram bot and admin panel for selling digital educational materials." },
+      { property: "og:title", content: "Telegram Shop Bot" },
+      { property: "og:description", content: "Telegram bot and admin panel for selling digital educational materials." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@Lovable" },
-      { name: "twitter:title", content: "Lovable App" },
-      { name: "twitter:description", content: "A Telegram bot for selling digital educational materials, acting as a catalog and order processing system." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/aaade547-639a-4ec8-bf3a-328bada91739/id-preview-519ee29c--79250394-984a-476c-a6aa-efe3efcc4b0e.lovable.app-1782434618166.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/aaade547-639a-4ec8-bf3a-328bada91739/id-preview-519ee29c--79250394-984a-476c-a6aa-efe3efcc4b0e.lovable.app-1782434618166.png" },
+      { name: "twitter:title", content: "Telegram Shop Bot" },
+      { name: "twitter:description", content: "Telegram bot and admin panel for selling digital educational materials." },
     ],
     links: [
       {

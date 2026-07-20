@@ -7,7 +7,7 @@
 ## 🔧 Шаг 1: Выполнение полной настройки базы данных
 
 ### 1.1 Откройте SQL Editor
-Перейдите по ссылке: https://supabase.com/dashboard/project/fnwksbasxakktscdjlfp/sql
+Перейдите по ссылке: https://supabase.com/dashboard/project/<your-supabase-project-id>/sql
 
 ### 1.2 Создайте новый запрос
 Нажмите кнопку **"New Query"**

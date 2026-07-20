@@ -32,13 +32,17 @@ vercel
 После деплоя перейдите в Vercel Dashboard → Settings → Environment Variables и добавьте:
 
 ```
-TELEGRAM_BOT_TOKEN=8956271941:AAGqtGWc8wHpJTcTPWt8cPZKa8GAcDcXmZY
-SUPABASE_PROJECT_ID=fnwksbasxakktscdjlfp
-SUPABASE_PUBLISHABLE_KEY=sb_publishable_4W8CmZnryDawb7df01EKRw_pJX4kLld
-SUPABASE_URL=https://fnwksbasxakktscdjlfp.supabase.co
-VITE_SUPABASE_PROJECT_ID=fnwksbasxakktscdjlfp
-VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_4W8CmZnryDawb7df01EKRw_pJX4kLld
-VITE_SUPABASE_URL=https://fnwksbasxakktscdjlfp.supabase.co
+TELEGRAM_BOT_TOKEN=<your-telegram-bot-token>
+SUPABASE_PROJECT_ID=<your-supabase-project-id>
+SUPABASE_PUBLISHABLE_KEY=<your-supabase-publishable-key>
+SUPABASE_URL=https://<your-supabase-project-id>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<your-supabase-service-role-key>
+VITE_SUPABASE_PROJECT_ID=<your-supabase-project-id>
+VITE_SUPABASE_PUBLISHABLE_KEY=<your-supabase-publishable-key>
+VITE_SUPABASE_URL=https://<your-supabase-project-id>.supabase.co
+ADMIN_USERNAME=<your-admin-login>
+ADMIN_PASSWORD=<your-admin-password>
+SESSION_SECRET=<random-32-plus-character-secret>
 ```
 
 ### 5. Настройте Telegram Webhook
@@ -48,14 +52,14 @@ VITE_SUPABASE_URL=https://fnwksbasxakktscdjlfp.supabase.co
 Настройте вебхук для Telegram бота:
 
 ```bash
-curl -X POST "https://api.telegram.org/bot8956271941:AAGqtGWc8wHpJTcTPWt8cPZKa8GAcDcXmZY/setWebhook" \
+curl -X POST "https://api.telegram.org/bot<your-telegram-bot-token>/setWebhook" \
   -H "Content-Type: application/json" \
   -d '{"url": "https://your-project.vercel.app/api/public/telegram/webhook"}'
 ```
 
 ### 6. Проверьте вебхук
 ```bash
-curl "https://api.telegram.org/bot8956271941:AAGqtGWc8wHpJTcTPWt8cPZKa8GAcDcXmZY/getWebhookInfo"
+curl "https://api.telegram.org/bot<your-telegram-bot-token>/getWebhookInfo"
 ```
 
 ## Важные замечания
