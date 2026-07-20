@@ -201,37 +201,51 @@ function AdminVipSubscribers() {
                 <td className="p-2">
                   {s.status === 'pending_payment' ? '-' : new Date(s.expires_at).toLocaleString("ru-RU")}
                 </td>
-                <td className="p-2 text-right space-x-2">
-                  {s.status === "pending_payment" && (
-                    <>
-                      <Button variant="default" size="sm" onClick={() => handleConfirm(s.id)}>Подтвердить</Button>
-                      <Button variant="outline" size="sm" onClick={() => handleReject(s.id)}>Отклонить</Button>
-                    </>
-                  )}
-                  {s.payment_proof_path && (
-                    <Button
-                      variant="link"
-                      size="sm"
-                      className="text-blue-500 h-auto p-0 mr-2"
-                      onClick={() => setProofModal({ path: s.payment_proof_path })}
-                    >
-                      Чек
-                    </Button>
-                  )}
-                  {s.status !== "pending_payment" && (
-                    <Button variant="outline" size="sm" onClick={() => handleExtend(s.id)}>Продлить</Button>
-                  )}
-                  {s.status === "active" && (
+                <td className="p-2">
+                  <div className="flex flex-wrap items-center justify-end gap-1.5">
+                    {s.payment_proof_path && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setProofModal({ path: s.payment_proof_path })}
+                      >
+                        Чек
+                      </Button>
+                    )}
+                    {s.status === "pending_payment" && (
+                      <>
+                        <Button variant="default" size="sm" onClick={() => handleConfirm(s.id)}>
+                          Подтвердить
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => handleReject(s.id)}>
+                          Отклонить
+                        </Button>
+                      </>
+                    )}
+                    {s.status !== "pending_payment" && (
+                      <Button variant="outline" size="sm" onClick={() => handleExtend(s.id)}>
+                        Продлить
+                      </Button>
+                    )}
+                    {s.status === "active" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                        onClick={() => handleExclude(s.id)}
+                      >
+                        Исключить
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
-                      className="text-amber-700 border-amber-300"
-                      onClick={() => handleExclude(s.id)}
+                      className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                      onClick={() => handleDelete(s.id)}
                     >
-                      Исключить
+                      Удалить
                     </Button>
-                  )}
-                  <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDelete(s.id)}>Удалить</Button>
+                  </div>
                 </td>
               </tr>
             );
