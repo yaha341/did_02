@@ -27,6 +27,7 @@ function AdminLayout() {
             <NavLink to="/admin/orders">Заказы</NavLink>
             <NavLink to="/admin/payment-methods">Реквизиты</NavLink>
             <NavLink to="/admin/settings">Настройки</NavLink>
+            <NavLink to="/admin/vip">👑 VIP-группа</NavLink>
           </div>
           <Button
             variant="ghost"
