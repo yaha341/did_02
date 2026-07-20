@@ -56,9 +56,20 @@ function AdminVipSettings() {
   }, [settings.data]);
 
   const onSave = async () => {
+    const w1 = parseInt(warnDays, 10);
+    const w2 = parseInt(warnDays2, 10);
+    if (!Number.isFinite(w1) || w1 < 1 || !Number.isFinite(w2) || w2 < 1) {
+      alert("Окна предупреждений должны быть целыми числами ≥ 1");
+      return;
+    }
+    if (w2 >= w1) {
+      alert("2-е предупреждение должно быть меньше 1-го (ближе к концу подписки).");
+      return;
+    }
+
     await saveSetting({ data: { key: "vip_group_id", value: groupId } });
-    await saveSetting({ data: { key: "vip_warn_days", value: warnDays } });
-    await saveSetting({ data: { key: "vip_warn_days_2", value: warnDays2 } });
+    await saveSetting({ data: { key: "vip_warn_days", value: String(w1) } });
+    await saveSetting({ data: { key: "vip_warn_days_2", value: String(w2) } });
     await saveSetting({ data: { key: "vip_test_mode", value: testMode ? "true" : "false" } });
     await saveSetting({ data: { key: "vip_payment_instructions", value: instructions } });
     await saveSetting({ data: { key: "vip_payment_qr_path", value: qrPath } });

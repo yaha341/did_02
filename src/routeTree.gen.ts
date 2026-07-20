@@ -24,6 +24,7 @@ import { Route as ApiAdminUploadRouteImport } from './routes/api/admin/upload'
 import { Route as AdminVipTariffsRouteImport } from './routes/admin.vip.tariffs'
 import { Route as AdminVipSubscribersRouteImport } from './routes/admin.vip.subscribers'
 import { Route as AdminVipSettingsRouteImport } from './routes/admin.vip.settings'
+import { Route as ApiPublicVipCronRouteImport } from './routes/api/public/vip/cron'
 import { Route as ApiPublicTelegramWebhookVipRouteImport } from './routes/api/public/telegram/webhook-vip'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram/webhook'
 import { Route as ApiPublicImgSplatRouteImport } from './routes/api/public/img/$'
@@ -104,6 +105,11 @@ const AdminVipSettingsRoute = AdminVipSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AdminVipRoute,
 } as any)
+const ApiPublicVipCronRoute = ApiPublicVipCronRouteImport.update({
+  id: '/api/public/vip/cron',
+  path: '/api/public/vip/cron',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicTelegramWebhookVipRoute =
   ApiPublicTelegramWebhookVipRouteImport.update({
     id: '/api/public/telegram/webhook-vip',
@@ -147,6 +153,7 @@ export interface FileRoutesByFullPath {
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/telegram/webhook-vip': typeof ApiPublicTelegramWebhookVipRoute
+  '/api/public/vip/cron': typeof ApiPublicVipCronRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -166,6 +173,7 @@ export interface FileRoutesByTo {
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/telegram/webhook-vip': typeof ApiPublicTelegramWebhookVipRoute
+  '/api/public/vip/cron': typeof ApiPublicVipCronRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -188,6 +196,7 @@ export interface FileRoutesById {
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/telegram/webhook-vip': typeof ApiPublicTelegramWebhookVipRoute
+  '/api/public/vip/cron': typeof ApiPublicVipCronRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -211,6 +220,7 @@ export interface FileRouteTypes {
     | '/api/public/img/$'
     | '/api/public/telegram/webhook'
     | '/api/public/telegram/webhook-vip'
+    | '/api/public/vip/cron'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -230,6 +240,7 @@ export interface FileRouteTypes {
     | '/api/public/img/$'
     | '/api/public/telegram/webhook'
     | '/api/public/telegram/webhook-vip'
+    | '/api/public/vip/cron'
   id:
     | '__root__'
     | '/'
@@ -251,6 +262,7 @@ export interface FileRouteTypes {
     | '/api/public/img/$'
     | '/api/public/telegram/webhook'
     | '/api/public/telegram/webhook-vip'
+    | '/api/public/vip/cron'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -262,6 +274,7 @@ export interface RootRouteChildren {
   ApiPublicImgSplatRoute: typeof ApiPublicImgSplatRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
   ApiPublicTelegramWebhookVipRoute: typeof ApiPublicTelegramWebhookVipRoute
+  ApiPublicVipCronRoute: typeof ApiPublicVipCronRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -371,6 +384,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminVipSettingsRouteImport
       parentRoute: typeof AdminVipRoute
     }
+    '/api/public/vip/cron': {
+      id: '/api/public/vip/cron'
+      path: '/api/public/vip/cron'
+      fullPath: '/api/public/vip/cron'
+      preLoaderRoute: typeof ApiPublicVipCronRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/telegram/webhook-vip': {
       id: '/api/public/telegram/webhook-vip'
       path: '/api/public/telegram/webhook-vip'
@@ -451,6 +471,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicImgSplatRoute: ApiPublicImgSplatRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
   ApiPublicTelegramWebhookVipRoute: ApiPublicTelegramWebhookVipRoute,
+  ApiPublicVipCronRoute: ApiPublicVipCronRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

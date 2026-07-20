@@ -1,4 +1,12 @@
-import { isAlreadyNotInChat, tgVip } from "@/lib/vip-bot.server";
+import {
+  escapeHtml,
+  isAlreadyNotInChat,
+  resolveVipBotUsername,
+  revokeVipInvite,
+  tgVip,
+  WARN_STAGE_1,
+  WARN_STAGE_2,
+} from "@/lib/vip-bot.server";
 
 export type VipCronResult = {
   warned: number;
@@ -20,26 +28,38 @@ async function sendWarn(
   expiresAt: string,
   stage: 1 | 2,
 ): Promise<{ ok: boolean; description?: string }> {
-  const when = new Date(expiresAt).toLocaleString("ru-RU");
+  const when = escapeHtml(new Date(expiresAt).toLocaleString("ru-RU"));
   const text =
     stage === 1
       ? `⚠️ <b>Напоминание</b>\n\nВаша VIP подписка истекает <b>${when}</b>.\n\nПродлите подписку заранее, чтобы не потерять доступ к группе.`
       : `🚨 <b>Срочно!</b>\n\nВаша VIP подписка истекает уже <b>${when}</b>!\n\nПродлите сейчас — иначе доступ к группе будет закрыт.`;
 
+  const botUsername = resolveVipBotUsername();
+  const reply_markup = botUsername
+    ? {
+        inline_keyboard: [
+          [
+            {
+              text: "Продлить подписку",
+              url: `https://t.me/${botUsername}?start=renew`,
+            },
+          ],
+        ],
+      }
+    : {
+        inline_keyboard: [[{ text: "Продлить подписку", callback_data: "buy_renew" }]],
+      };
+
+  // If no username configured, tell user to open /start renew (callback answered in bot)
+  const extraHint = botUsername
+    ? ""
+    : "\n\nНажмите /start renew в этом боте, чтобы выбрать тариф.";
+
   return tgVip("sendMessage", {
     chat_id: telegramId,
-    text,
+    text: text + extraHint,
     parse_mode: "HTML",
-    reply_markup: {
-      inline_keyboard: [
-        [
-          {
-            text: "Продлить подписку",
-            url: `https://t.me/${process.env.VIP_BOT_USERNAME || "RazvivashkaVIP_bot"}?start=renew`,
-          },
-        ],
-      ],
-    },
+    reply_markup,
   });
 }
 
@@ -55,8 +75,13 @@ export async function runVipCronJob(): Promise<VipCronResult> {
   for (const r of settingsData ?? []) settings[r.key as string] = (r.value as string) ?? "";
 
   const isTest = settings.vip_test_mode === "true";
-  const warnDays = parseInt(settings.vip_warn_days || "3", 10);
-  const warnDays2 = parseInt(settings.vip_warn_days_2 || "1", 10);
+  let warnDays = parseInt(settings.vip_warn_days || "3", 10);
+  let warnDays2 = parseInt(settings.vip_warn_days_2 || "1", 10);
+  if (!Number.isFinite(warnDays) || warnDays < 1) warnDays = 3;
+  if (!Number.isFinite(warnDays2) || warnDays2 < 1) warnDays2 = 1;
+  // Ensure stage-2 window is strictly closer than stage-1
+  if (warnDays2 >= warnDays) warnDays2 = Math.max(1, warnDays - 1);
+
   const groupId = settings.vip_group_id;
 
   if (!groupId) {
@@ -76,11 +101,26 @@ export async function runVipCronJob(): Promise<VipCronResult> {
     .gt("expires_at", now.toISOString())
     .is("admin_note", null);
 
-  for (const sub of stage1 ?? []) {
+  // Prefer warning the latest-expiring active per user (avoid spam if duplicates slipped in)
+  const pickLatestPerUser = <T extends { telegram_id: number | null; expires_at: string | null }>(
+    rows: T[] | null,
+  ): T[] => {
+    const best = new Map<number, T>();
+    for (const sub of rows ?? []) {
+      const tid = sub.telegram_id as number;
+      const prev = best.get(tid);
+      if (!prev || new Date(sub.expires_at as string) > new Date(prev.expires_at as string)) {
+        best.set(tid, sub);
+      }
+    }
+    return [...best.values()];
+  };
+
+  for (const sub of pickLatestPerUser(stage1)) {
     try {
       const sent = await sendWarn(sub.telegram_id as number, sub.expires_at as string, 1);
       if (sent.ok) {
-        await s.from("vip_subscriptions").update({ admin_note: "warned" }).eq("id", sub.id);
+        await s.from("vip_subscriptions").update({ admin_note: WARN_STAGE_1 }).eq("id", sub.id);
         result.warned++;
       } else {
         result.errors.push(`warn1 ${sub.telegram_id}: ${sent.description || "send failed"}`);
@@ -97,13 +137,13 @@ export async function runVipCronJob(): Promise<VipCronResult> {
     .eq("status", "active")
     .lte("expires_at", threshold2.toISOString())
     .gt("expires_at", now.toISOString())
-    .eq("admin_note", "warned");
+    .eq("admin_note", WARN_STAGE_1);
 
-  for (const sub of stage2 ?? []) {
+  for (const sub of pickLatestPerUser(stage2)) {
     try {
       const sent = await sendWarn(sub.telegram_id as number, sub.expires_at as string, 2);
       if (sent.ok) {
-        await s.from("vip_subscriptions").update({ admin_note: "warned2" }).eq("id", sub.id);
+        await s.from("vip_subscriptions").update({ admin_note: WARN_STAGE_2 }).eq("id", sub.id);
         result.warned2++;
       } else {
         result.errors.push(`warn2 ${sub.telegram_id}: ${sent.description || "send failed"}`);
@@ -130,13 +170,11 @@ export async function runVipCronJob(): Promise<VipCronResult> {
         .neq("id", sub.id);
 
       if ((otherActive ?? 0) > 0) {
-        if (sub.group_invite_link) {
-          await tgVip("revokeChatInviteLink", {
-            chat_id: groupId,
-            invite_link: sub.group_invite_link,
-          });
-        }
-        await s.from("vip_subscriptions").update({ status: "expired" }).eq("id", sub.id);
+        await revokeVipInvite(groupId, sub.group_invite_link as string | null);
+        await s
+          .from("vip_subscriptions")
+          .update({ status: "expired", group_invite_link: null })
+          .eq("id", sub.id);
         result.expired++;
         continue;
       }
@@ -159,12 +197,7 @@ export async function runVipCronJob(): Promise<VipCronResult> {
         only_if_banned: true,
       });
 
-      if (sub.group_invite_link) {
-        await tgVip("revokeChatInviteLink", {
-          chat_id: groupId,
-          invite_link: sub.group_invite_link,
-        });
-      }
+      await revokeVipInvite(groupId, sub.group_invite_link as string | null);
 
       await tgVip("sendMessage", {
         chat_id: sub.telegram_id,
@@ -172,7 +205,10 @@ export async function runVipCronJob(): Promise<VipCronResult> {
         parse_mode: "HTML",
       });
 
-      await s.from("vip_subscriptions").update({ status: "expired" }).eq("id", sub.id);
+      await s
+        .from("vip_subscriptions")
+        .update({ status: "expired", group_invite_link: null })
+        .eq("id", sub.id);
       result.expired++;
     } catch (err) {
       result.errors.push(`expire ${sub.telegram_id}: ${(err as Error).message}`);
@@ -191,8 +227,6 @@ export function isVipCronAuthorized(request: Request): boolean {
 
   const auth = request.headers.get("authorization");
   if (auth === `Bearer ${secret}`) return true;
-
-  if (request.headers.get("x-vercel-cron") === "1" && secret) return true;
 
   return false;
 }

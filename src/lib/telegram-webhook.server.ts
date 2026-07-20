@@ -3,6 +3,13 @@
 export function verifyTelegramWebhookSecret(request: Request, envNames: string[]): boolean {
   const expected = envNames.map((n) => process.env[n]).find((v) => v && v.length > 0);
   if (!expected) {
+    // In production require a secret; fail closed. Local/dev may omit for convenience.
+    if (process.env.NODE_ENV === "production" || process.env.VERCEL === "1") {
+      console.error(
+        `[webhook] No secret configured (${envNames.join(" / ")}). Rejecting request in production.`,
+      );
+      return false;
+    }
     console.warn(
       `[webhook] No secret configured (${envNames.join(" / ")}). Set env + secret_token on setWebhook for production.`,
     );

@@ -35,10 +35,21 @@ export const getOrder = createServerFn({ method: "GET" })
   });
 
 export const confirmOrder = createServerFn({ method: "POST" })
-  .validator((d: unknown) => z.object({ id: z.number().int() }).parse(d))
+  .validator((d: unknown) =>
+    z
+      .object({
+        id: z.number().int(),
+        forceResend: z.boolean().optional(),
+        allowWithoutProof: z.boolean().optional(),
+      })
+      .parse(d),
+  )
   .handler(async ({ data }) => {
     await requireAdmin();
-    return await deliverOrder(data.id);
+    return await deliverOrder(data.id, {
+      forceResend: !!data.forceResend,
+      allowWithoutProof: !!data.allowWithoutProof,
+    });
   });
 
 export const rejectOrder = createServerFn({ method: "POST" })
@@ -75,7 +86,10 @@ export const deleteOrder = createServerFn({ method: "POST" })
   });
 
 // Shared: deliver files to user and mark order delivered. Used by admin panel and bot callback.
-export async function deliverOrder(orderId: number) {
+export async function deliverOrder(
+  orderId: number,
+  opts?: { forceResend?: boolean; allowWithoutProof?: boolean },
+) {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { data: order, error } = await supabaseAdmin
     .from("orders")
@@ -83,11 +97,34 @@ export async function deliverOrder(orderId: number) {
     .eq("id", orderId)
     .single();
   if (error || !order) throw new Error(error?.message || "Order not found");
-  if (order.status === "delivered") return { ok: true as const, alreadyDelivered: true };
+
+  if (order.status === "delivered" && !opts?.forceResend) {
+    return { ok: true as const, alreadyDelivered: true };
+  }
+
+  if (
+    !opts?.forceResend &&
+    !opts?.allowWithoutProof &&
+    order.status === "awaiting_payment" &&
+    !order.payment_proof_path
+  ) {
+    throw new Error("Нет чека оплаты. Дождитесь скриншота или нажмите «Выдать без чека».");
+  }
+
+  if (
+    !opts?.forceResend &&
+    order.status !== "awaiting_confirmation" &&
+    order.status !== "awaiting_payment" &&
+    order.status !== "delivered"
+  ) {
+    throw new Error(`Нельзя выдать заказ в статусе «${order.status}»`);
+  }
 
   await tg("sendMessage", {
     chat_id: order.telegram_id,
-    text: `✅ Оплата подтверждена! Заказ #${order.id}.\nОтправляю ваши материалы...`,
+    text: opts?.forceResend
+      ? `📦 Повторная отправка материалов по заказу #${order.id}...`
+      : `✅ Оплата подтверждена! Заказ #${order.id}.\nОтправляю ваши материалы...`,
   });
 
   const items = order.order_items as Array<{

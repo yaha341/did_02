@@ -20,9 +20,16 @@ function AdminVipDashboard() {
   const isTest = settings.data?.vip_test_mode === "true";
 
   const allSubs = subs.data ?? [];
-  const activeSubs = allSubs.filter((s) => s.status === "active");
+  const now = Date.now();
+  const activeSubs = allSubs.filter(
+    (s) => s.status === "active" && new Date(s.expires_at as string).getTime() > now,
+  );
   const pendingSubs = allSubs.filter((s) => s.status === "pending_payment");
-  const expiredSubs = allSubs.filter((s) => s.status === "expired");
+  const expiredSubs = allSubs.filter(
+    (s) =>
+      s.status === "expired" ||
+      (s.status === "active" && new Date(s.expires_at as string).getTime() <= now),
+  );
 
   return (
     <div className="space-y-6 max-w-4xl">

@@ -72,8 +72,14 @@ function AdminVipSubscribers() {
   const handleExtend = async (id: string) => {
     const days = prompt("На сколько дней продлить?", "30");
     if (!days) return;
-    await extendVipSubscription({ data: { id, days: parseInt(days) } });
-    qc.invalidateQueries({ queryKey: ["vip_subs"] });
+    const n = parseInt(days, 10);
+    if (!Number.isFinite(n) || n < 1) return alert("Укажите целое число дней ≥ 1");
+    try {
+      await extendVipSubscription({ data: { id, days: n } });
+      qc.invalidateQueries({ queryKey: ["vip_subs"] });
+    } catch (e: any) {
+      alert("Ошибка: " + e.message);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -125,6 +131,7 @@ function AdminVipSubscribers() {
         <Button variant={statusFilter === "active" ? "default" : "outline"} size="sm" onClick={() => setStatusFilter("active")}>Активные</Button>
         <Button variant={statusFilter === "pending_payment" ? "default" : "outline"} size="sm" onClick={() => setStatusFilter("pending_payment")}>Ожидают проверки</Button>
         <Button variant={statusFilter === "expired" ? "default" : "outline"} size="sm" onClick={() => setStatusFilter("expired")}>Истёкшие</Button>
+        <Button variant={statusFilter === "cancelled" ? "default" : "outline"} size="sm" onClick={() => setStatusFilter("cancelled")}>Отклонённые</Button>
       </div>
 
       <div className="border rounded-md overflow-hidden bg-card">
@@ -158,11 +165,23 @@ function AdminVipSubscribers() {
                 </td>
                 <td className="p-2">{s.vip_tariffs?.name || "Удалён"}</td>
                 <td className="p-2">
-                  {s.status === "active" && <span className="text-green-600 font-medium">Активен</span>}
-                  {s.status === "pending_payment" && <span className="text-orange-600 font-medium">Ожидает</span>}
-                  {s.status === "expired" && <span className="text-red-600 font-medium">Истёк</span>}
-                  {s.status === "cancelled" && <span className="text-muted-foreground">Отклонён</span>}
-                  {s.status === "rejected" && <span className="text-muted-foreground">Отклонён</span>}
+                  {(() => {
+                    const pastDue =
+                      s.status === "active" && new Date(s.expires_at).getTime() <= Date.now();
+                    if (s.status === "active" && !pastDue)
+                      return <span className="text-green-600 font-medium">Активен</span>;
+                    if (pastDue)
+                      return (
+                        <span className="text-amber-600 font-medium">Истёк (ожидает кик)</span>
+                      );
+                    if (s.status === "pending_payment")
+                      return <span className="text-orange-600 font-medium">Ожидает</span>;
+                    if (s.status === "expired")
+                      return <span className="text-red-600 font-medium">Истёк</span>;
+                    if (s.status === "cancelled")
+                      return <span className="text-muted-foreground">Отклонён</span>;
+                    return <span className="text-muted-foreground">{s.status}</span>;
+                  })()}
                 </td>
                 <td className="p-2">
                   {s.status === 'pending_payment' ? '-' : new Date(s.expires_at).toLocaleString("ru-RU")}

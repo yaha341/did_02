@@ -90,7 +90,8 @@ const SaveInput = z.object({
 
 export const getVipBotUsername = createServerFn({ method: "GET" }).handler(async () => {
   await requireAdmin();
-  return { username: (process.env.VIP_BOT_USERNAME || "").replace(/^@/, "") };
+  const { resolveVipBotUsername } = await import("./vip-bot.server");
+  return { username: resolveVipBotUsername() };
 });
 
 export const saveVipTariff = createServerFn({ method: "POST" })
@@ -98,6 +99,16 @@ export const saveVipTariff = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();
+    const isEntry = data.is_entry !== undefined ? !!data.is_entry : false;
+
+    // Only one entry package may exist — clear flag on others first
+    if (isEntry) {
+      let clearQ = s.from("vip_tariffs").update({ is_entry: false }).eq("is_entry", true);
+      if (data.id) clearQ = clearQ.neq("id", data.id);
+      const { error: clearError } = await clearQ;
+      if (clearError) throw new Error(clearError.message);
+    }
+
     const payload: TablesInsert<"vip_tariffs"> = {
       name: data.name,
       price: data.price,
@@ -105,9 +116,9 @@ export const saveVipTariff = createServerFn({ method: "POST" })
       duration_days: data.duration_days,
       duration_minutes: data.duration_minutes,
       is_active: data.is_active,
-      is_public: data.is_entry ? false : data.is_public,
-      sort_order: data.is_entry ? -100 : data.sort_order,
-      is_entry: data.is_entry !== undefined ? !!data.is_entry : undefined,
+      is_public: isEntry ? false : data.is_public,
+      sort_order: isEntry ? -100 : data.sort_order,
+      is_entry: data.is_entry !== undefined ? isEntry : undefined,
     };
 
     if (data.id) {

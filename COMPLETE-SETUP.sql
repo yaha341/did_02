@@ -306,3 +306,102 @@ ON public.app_settings FOR ALL
 TO service_role
 USING (true)
 WITH CHECK (true);
+
+-- ============================================
+-- ЧАСТЬ 5: VIP tables + URL columns + sequence helper
+-- (also available as vip-schema-patch.sql / schema-urls-patch.sql / reset-orders-sequence.sql)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS public.vip_tariffs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  price NUMERIC(10,2) NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'KZT',
+  duration_days INT NOT NULL,
+  duration_minutes INT NOT NULL DEFAULT 2,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  is_public BOOLEAN NOT NULL DEFAULT true,
+  is_entry BOOLEAN NOT NULL DEFAULT false,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+GRANT ALL ON public.vip_tariffs TO service_role;
+ALTER TABLE public.vip_tariffs ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS public.vip_subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  telegram_id BIGINT NOT NULL,
+  username TEXT,
+  first_name TEXT,
+  last_name TEXT,
+  tariff_id UUID NOT NULL REFERENCES public.vip_tariffs(id) ON DELETE RESTRICT,
+  status TEXT NOT NULL DEFAULT 'pending_payment',
+  payment_proof_path TEXT,
+  group_invite_link TEXT,
+  started_at TIMESTAMPTZ,
+  imported BOOLEAN NOT NULL DEFAULT false,
+  admin_note TEXT,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT status_check CHECK (status IN ('pending_payment', 'active', 'expired', 'cancelled'))
+);
+GRANT ALL ON public.vip_subscriptions TO service_role;
+ALTER TABLE public.vip_subscriptions ENABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS idx_vip_subscriptions_telegram ON public.vip_subscriptions(telegram_id);
+CREATE INDEX IF NOT EXISTS idx_vip_subscriptions_status ON public.vip_subscriptions(status);
+CREATE INDEX IF NOT EXISTS idx_vip_subscriptions_expires ON public.vip_subscriptions(expires_at);
+
+DROP TRIGGER IF EXISTS trg_vip_subscriptions_touch ON public.vip_subscriptions;
+CREATE TRIGGER trg_vip_subscriptions_touch BEFORE UPDATE ON public.vip_subscriptions
+FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+
+CREATE TABLE IF NOT EXISTS public.vip_member_profiles (
+  telegram_id BIGINT PRIMARY KEY,
+  username TEXT,
+  first_name TEXT,
+  last_name TEXT,
+  assigned_tariff_id UUID REFERENCES public.vip_tariffs(id) ON DELETE SET NULL,
+  assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  assigned_source TEXT NOT NULL DEFAULT 'deep_link'
+);
+GRANT ALL ON public.vip_member_profiles TO service_role;
+ALTER TABLE public.vip_member_profiles ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Service Role All vip_tariffs" ON public.vip_tariffs;
+CREATE POLICY "Service Role All vip_tariffs"
+ON public.vip_tariffs FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Service Role All vip_subscriptions" ON public.vip_subscriptions;
+CREATE POLICY "Service Role All vip_subscriptions"
+ON public.vip_subscriptions FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Service Role All vip_member_profiles" ON public.vip_member_profiles;
+CREATE POLICY "Service Role All vip_member_profiles"
+ON public.vip_member_profiles FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+ALTER TABLE public.products
+  ADD COLUMN IF NOT EXISTS file_url TEXT,
+  ADD COLUMN IF NOT EXISTS file_url_kz TEXT;
+
+ALTER TABLE public.order_items
+  ADD COLUMN IF NOT EXISTS file_path_kz_snapshot TEXT,
+  ADD COLUMN IF NOT EXISTS file_name_kz_snapshot TEXT,
+  ADD COLUMN IF NOT EXISTS file_url_snapshot TEXT,
+  ADD COLUMN IF NOT EXISTS file_url_kz_snapshot TEXT;
+
+CREATE OR REPLACE FUNCTION public.reset_orders_sequence()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  max_id bigint;
+BEGIN
+  SELECT COALESCE(MAX(id), 0) INTO max_id FROM public.orders;
+  PERFORM setval(pg_get_serial_sequence('public.orders', 'id'), GREATEST(max_id, 1), max_id > 0);
+END;
+$$;
+
+NOTIFY pgrst, 'reload schema';

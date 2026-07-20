@@ -1,12 +1,73 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAdmin } from "./admin-session.server";
-import { isAlreadyNotInChat, tgVip } from "./vip-bot.server";
+import {
+  escapeHtml,
+  isAlreadyNotInChat,
+  isVipGroupMember,
+  revokeVipInvite,
+  tgVip,
+} from "./vip-bot.server";
 import { assignMemberTariff } from "./vip-member.server";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
+}
+
+async function expireOtherActivesAndRevokeInvites(
+  s: Awaited<ReturnType<typeof db>>,
+  telegramId: number,
+  keepId: string,
+  groupId: string,
+) {
+  const { data: others } = await s
+    .from("vip_subscriptions")
+    .select("id, group_invite_link")
+    .eq("telegram_id", telegramId)
+    .eq("status", "active")
+    .neq("id", keepId);
+
+  for (const other of others ?? []) {
+    await revokeVipInvite(groupId, other.group_invite_link as string | null);
+  }
+
+  if ((others ?? []).length > 0) {
+    await s
+      .from("vip_subscriptions")
+      .update({ status: "expired", group_invite_link: null })
+      .eq("telegram_id", telegramId)
+      .eq("status", "active")
+      .neq("id", keepId);
+  }
+}
+
+/** Latest valid active expiry for stacking renew periods (or null). */
+async function getLatestActiveExpiry(
+  s: Awaited<ReturnType<typeof db>>,
+  telegramId: number,
+  excludeId?: string,
+): Promise<Date | null> {
+  let q = s
+    .from("vip_subscriptions")
+    .select("expires_at")
+    .eq("telegram_id", telegramId)
+    .eq("status", "active")
+    .gt("expires_at", new Date().toISOString());
+  if (excludeId) q = q.neq("id", excludeId);
+  const { data } = await q.order("expires_at", { ascending: false }).limit(1).maybeSingle();
+  if (!data?.expires_at) return null;
+  return new Date(data.expires_at as string);
+}
+
+function addTariffDuration(base: Date, tariff: { duration_minutes?: number; duration_days?: number } | null, isTest: boolean): Date {
+  const expiresAt = new Date(base);
+  if (isTest) {
+    expiresAt.setMinutes(expiresAt.getMinutes() + (tariff?.duration_minutes || 1));
+  } else {
+    expiresAt.setDate(expiresAt.getDate() + (tariff?.duration_days || 30));
+  }
+  return expiresAt;
 }
 
 // Test function to check Supabase connection (real totals, not limit(1))
@@ -128,26 +189,34 @@ export async function activateVipSubscription(id: string) {
   const isTest = settings.vip_test_mode === "true";
 
   const now = new Date();
-  const expiresAt = new Date(now);
-  if (isTest) {
-    expiresAt.setMinutes(now.getMinutes() + (tariff?.duration_minutes || 1));
-  } else {
-    expiresAt.setDate(now.getDate() + (tariff?.duration_days || 30));
+  const latestOtherExpiry = await getLatestActiveExpiry(s, sub.telegram_id as number, id);
+  // Stack renew onto remaining paid time instead of resetting from "now"
+  const periodBase =
+    latestOtherExpiry && latestOtherExpiry.getTime() > now.getTime() ? latestOtherExpiry : now;
+  const expiresAt = addTariffDuration(periodBase, tariff, isTest);
+
+  const alreadyInGroup = await isVipGroupMember(groupId, sub.telegram_id as number);
+  // Invite only when user is NOT in the group (left early / first join / kick failed then left)
+  const needsInvite = !alreadyInGroup;
+  const isStackedRenewal = !!(latestOtherExpiry && latestOtherExpiry.getTime() > now.getTime());
+
+  let link: string | null = null;
+
+  if (needsInvite) {
+    // Create one-time invite BEFORE marking active — avoids stuck "active" without link
+    const inviteLinkData = await tgVip("createChatInviteLink", {
+      chat_id: groupId,
+      member_limit: 1,
+      name: `vip-${id.slice(0, 8)}`,
+      expire_date: Math.floor(expiresAt.getTime() / 1000),
+    });
+
+    if (!inviteLinkData.ok) {
+      throw new Error("Не удалось создать ссылку-приглашение. Убедитесь что бот админ в группе.");
+    }
+
+    link = (inviteLinkData.result as any).invite_link as string;
   }
-
-  // Create one-time invite BEFORE marking active — avoids stuck "active" without link
-  const inviteLinkData = await tgVip("createChatInviteLink", {
-    chat_id: groupId,
-    member_limit: 1,
-    name: `vip-${id.slice(0, 8)}`,
-    expire_date: Math.floor(expiresAt.getTime() / 1000),
-  });
-
-  if (!inviteLinkData.ok) {
-    throw new Error("Не удалось создать ссылку-приглашение. Убедитесь что бот админ в группе.");
-  }
-
-  const link = (inviteLinkData.result as any).invite_link as string;
 
   const { data: updated, error: updateError } = await s
     .from("vip_subscriptions")
@@ -164,30 +233,49 @@ export async function activateVipSubscription(id: string) {
     .maybeSingle();
 
   if (updateError) {
-    await tgVip("revokeChatInviteLink", { chat_id: groupId, invite_link: link });
+    if (link) await revokeVipInvite(groupId, link);
     throw new Error("Ошибка обновления подписки: " + updateError.message);
   }
 
   if (!updated) {
-    await tgVip("revokeChatInviteLink", { chat_id: groupId, invite_link: link });
+    if (link) await revokeVipInvite(groupId, link);
     throw new Error("Заявка уже обработана другим администратором");
   }
 
-  // Renewal: close other actives without kicking (user stays in group under new period)
-  await s
-    .from("vip_subscriptions")
-    .update({ status: "expired" })
-    .eq("telegram_id", sub.telegram_id)
-    .eq("status", "active")
-    .neq("id", id);
+  // Close other actives + revoke their invites (user stays in group under new period)
+  await expireOtherActivesAndRevokeInvites(s, sub.telegram_id as number, id, groupId);
 
-  const welcomeMsg = settings.vip_welcome_message || "Ваша VIP подписка активна!";
+  const welcomeMsg = escapeHtml(settings.vip_welcome_message || "Ваша VIP подписка активна!");
+  const until = escapeHtml(expiresAt.toLocaleString("ru-RU"));
 
-  await tgVip("sendMessage", {
-    chat_id: sub.telegram_id,
-    text: `✅ ${welcomeMsg}\n\nСрок действия до: ${expiresAt.toLocaleString("ru-RU")}\n\nВаша персональная одноразовая ссылка для вступления:\n${link}`,
-    parse_mode: "HTML",
-  });
+  if (!needsInvite) {
+    await tgVip("sendMessage", {
+      chat_id: sub.telegram_id,
+      text:
+        `✅ ${welcomeMsg}\n\n` +
+        `Доступ продлён до: <b>${until}</b>\n\n` +
+        `Вы остаётесь в VIP-группе — новая ссылка не нужна.`,
+      parse_mode: "HTML",
+    });
+  } else if (isStackedRenewal) {
+    await tgVip("sendMessage", {
+      chat_id: sub.telegram_id,
+      text:
+        `✅ ${welcomeMsg}\n\n` +
+        `Доступ продлён до: <b>${until}</b>\n\n` +
+        `Вас нет в группе — одноразовая ссылка для возврата:\n${link}`,
+      parse_mode: "HTML",
+    });
+  } else {
+    await tgVip("sendMessage", {
+      chat_id: sub.telegram_id,
+      text:
+        `✅ ${welcomeMsg}\n\n` +
+        `Срок действия до: <b>${until}</b>\n\n` +
+        `Ваша персональная одноразовая ссылка для вступления:\n${link}`,
+      parse_mode: "HTML",
+    });
+  }
 
   if (tariff?.is_public === false && !tariff?.is_entry) {
     await assignMemberTariff(
@@ -239,56 +327,66 @@ export const confirmVipSubscription = createServerFn({ method: "POST" })
     return await activateVipSubscription(data.id);
   });
 
+/** Shared reject: Telegram callbacks and admin panel. Notifies user only if row was updated. */
+export async function rejectVipSubscriptionCore(id: string): Promise<{ ok: true; alreadyProcessed?: boolean }> {
+  const s = await db();
+
+  const { data: sub, error: fetchError } = await s
+    .from("vip_subscriptions")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (fetchError) throw new Error(fetchError.message);
+  if (!sub) throw new Error("Подписка не найдена");
+  if (sub.status !== "pending_payment") {
+    return { ok: true, alreadyProcessed: true };
+  }
+
+  const { data: settingsData } = await s.from("app_settings").select("*");
+  const settings: Record<string, string> = {};
+  for (const r of settingsData ?? []) settings[r.key as string] = (r.value as string) ?? "";
+  const groupId = settings.vip_group_id;
+
+  if (groupId && sub.group_invite_link) {
+    await revokeVipInvite(groupId, sub.group_invite_link as string);
+  }
+
+  const { data: updated, error } = await s
+    .from("vip_subscriptions")
+    .update({ status: "cancelled" })
+    .eq("id", id)
+    .eq("status", "pending_payment")
+    .select("telegram_id")
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!updated) {
+    return { ok: true, alreadyProcessed: true };
+  }
+
+  await tgVip("sendMessage", {
+    chat_id: updated.telegram_id,
+    text: "❌ Ваша оплата была отклонена. Если это ошибка, свяжитесь с поддержкой.",
+  });
+
+  return { ok: true };
+}
+
 export const rejectVipSubscription = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
     await requireAdmin();
-    const s = await db();
-
-    const { data: sub, error: fetchError } = await s
-      .from("vip_subscriptions")
-      .select("*")
-      .eq("id", data.id)
-      .maybeSingle();
-
-    if (fetchError) throw new Error(fetchError.message);
-    if (!sub) throw new Error("Подписка не найдена");
-    if (sub.status !== "pending_payment") {
-      throw new Error("Отклонить можно только заявку в статусе «ожидает оплаты»");
-    }
-
-    const { data: settingsData } = await s.from("app_settings").select("*");
-    const settings: Record<string, string> = {};
-    for (const r of settingsData ?? []) settings[r.key as string] = (r.value as string) ?? "";
-    const groupId = settings.vip_group_id;
-
-    if (groupId && sub.group_invite_link) {
-      await tgVip("revokeChatInviteLink", {
-        chat_id: groupId,
-        invite_link: sub.group_invite_link,
-      });
-    }
-
-    const { error } = await s
-      .from("vip_subscriptions")
-      .update({ status: "cancelled" })
-      .eq("id", data.id)
-      .eq("status", "pending_payment");
-
-    if (error) throw new Error(error.message);
-
-    await tgVip("sendMessage", {
-      chat_id: sub.telegram_id,
-      text: "❌ Ваша оплата была отклонена. Если это ошибка, свяжитесь с поддержкой.",
-    });
-
-    return { ok: true };
+    return await rejectVipSubscriptionCore(data.id);
   });
 
 const AddManualInput = z.object({
-  telegram_id: z.string().min(1),
+  telegram_id: z
+    .string()
+    .min(1)
+    .regex(/^\d{5,15}$/, "Telegram ID должен быть числом"),
   tariff_id: z.string().uuid(),
-  days: z.number().min(1),
+  days: z.number().min(1).optional(),
   status: z.string(),
 });
 
@@ -297,35 +395,61 @@ export const addVipSubscriptionManual = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();
-    
-    const now = new Date();
-    const expiresAt = new Date(now);
-    expiresAt.setDate(now.getDate() + data.days);
 
-    const { error } = await s.from("vip_subscriptions").insert({
-      telegram_id: parseInt(data.telegram_id),
-      tariff_id: data.tariff_id,
-      started_at: now.toISOString(),
-      expires_at: expiresAt.toISOString(),
-      status: data.status,
-      imported: true,
-    });
-
-    if (error) throw new Error(error.message);
+    const { data: settingsData } = await s.from("app_settings").select("*");
+    const settings: Record<string, string> = {};
+    for (const r of settingsData ?? []) settings[r.key as string] = (r.value as string) ?? "";
+    const isTest = settings.vip_test_mode === "true";
+    const groupId = settings.vip_group_id || "";
 
     const { data: tariff } = await s
       .from("vip_tariffs")
-      .select("is_public, is_entry")
+      .select("duration_days, duration_minutes, is_public, is_entry")
       .eq("id", data.tariff_id)
       .maybeSingle();
+
+    const telegramId = parseInt(data.telegram_id, 10);
+    if (!Number.isFinite(telegramId)) throw new Error("Некорректный Telegram ID");
+
+    const now = new Date();
+    const expiresAt = new Date(now);
+    if (isTest) {
+      const mins = tariff?.duration_minutes ?? 5;
+      expiresAt.setMinutes(expiresAt.getMinutes() + mins);
+    } else {
+      const days = data.days ?? tariff?.duration_days ?? 30;
+      expiresAt.setDate(expiresAt.getDate() + days);
+    }
+
+    const { data: inserted, error } = await s
+      .from("vip_subscriptions")
+      .insert({
+        telegram_id: telegramId,
+        tariff_id: data.tariff_id,
+        started_at: now.toISOString(),
+        expires_at: expiresAt.toISOString(),
+        status: data.status,
+        imported: true,
+      })
+      .select("id")
+      .single();
+
+    if (error) throw new Error(error.message);
+
+    // Avoid duplicate concurrent actives for the same user
+    if (data.status === "active" && inserted?.id && groupId) {
+      await expireOtherActivesAndRevokeInvites(s, telegramId, inserted.id, groupId);
+    } else if (data.status === "active" && inserted?.id) {
+      await s
+        .from("vip_subscriptions")
+        .update({ status: "expired" })
+        .eq("telegram_id", telegramId)
+        .eq("status", "active")
+        .neq("id", inserted.id);
+    }
+
     if (tariff?.is_public === false && !tariff?.is_entry) {
-      await assignMemberTariff(
-        s,
-        parseInt(data.telegram_id),
-        {},
-        data.tariff_id,
-        "admin",
-      );
+      await assignMemberTariff(s, telegramId, {}, data.tariff_id, "admin");
     }
 
     return { ok: true };
@@ -349,7 +473,11 @@ export const extendVipSubscription = createServerFn({ method: "POST" })
     for (const r of settingsData ?? []) settings[r.key as string] = (r.value as string) ?? "";
     const groupId = settings.vip_group_id;
 
-    const wasInactive = sub.status !== "active";
+    // Past-due "active" (cron hasn't kicked yet) must follow inactive invite path
+    const pastDue =
+      sub.status === "active" &&
+      new Date(sub.expires_at as string).getTime() <= Date.now();
+    const wasInactive = sub.status !== "active" || pastDue;
     const base = wasInactive ? new Date() : new Date(sub.expires_at as string);
     // If already expired in the past, extend from now
     const baseSafe = base.getTime() < Date.now() ? new Date() : base;
@@ -357,25 +485,44 @@ export const extendVipSubscription = createServerFn({ method: "POST" })
 
     let inviteLink = sub.group_invite_link as string | null;
 
-    // Re-issue invite if user was expired/cancelled (likely already kicked)
+    // Re-issue invite if user was expired/cancelled AND not currently in the group
     if (wasInactive && groupId) {
-      if (inviteLink) {
-        await tgVip("revokeChatInviteLink", { chat_id: groupId, invite_link: inviteLink });
-      }
-      const invite = await tgVip("createChatInviteLink", {
-        chat_id: groupId,
-        member_limit: 1,
-        name: `vip-ext-${data.id.slice(0, 8)}`,
-        expire_date: Math.floor(baseSafe.getTime() / 1000),
-      });
-      if (!invite.ok) {
-        throw new Error("Не удалось создать ссылку-приглашение. Убедитесь что бот админ в группе.");
-      }
-      inviteLink = (invite.result as any).invite_link;
+      const inGroup = await isVipGroupMember(groupId, sub.telegram_id as number);
+      if (inGroup) {
+        if (inviteLink) await revokeVipInvite(groupId, inviteLink);
+        inviteLink = null;
+        await tgVip("sendMessage", {
+          chat_id: sub.telegram_id,
+          text:
+            `✅ Подписка продлена до <b>${escapeHtml(baseSafe.toLocaleString("ru-RU"))}</b>\n\n` +
+            `Вы уже в VIP-группе — новая ссылка не нужна.`,
+          parse_mode: "HTML",
+        });
+      } else {
+        await revokeVipInvite(groupId, inviteLink);
+        const invite = await tgVip("createChatInviteLink", {
+          chat_id: groupId,
+          member_limit: 1,
+          name: `vip-ext-${data.id.slice(0, 8)}`,
+          expire_date: Math.floor(baseSafe.getTime() / 1000),
+        });
+        if (!invite.ok) {
+          throw new Error("Не удалось создать ссылку-приглашение. Убедитесь что бот админ в группе.");
+        }
+        inviteLink = (invite.result as any).invite_link;
 
+        await tgVip("sendMessage", {
+          chat_id: sub.telegram_id,
+          text:
+            `✅ Подписка продлена до <b>${escapeHtml(baseSafe.toLocaleString("ru-RU"))}</b>\n\n` +
+            `Одноразовая ссылка для вступления:\n${inviteLink}`,
+          parse_mode: "HTML",
+        });
+      }
+    } else {
       await tgVip("sendMessage", {
         chat_id: sub.telegram_id,
-        text: `✅ Подписка продлена до ${baseSafe.toLocaleString("ru-RU")}\n\nОдноразовая ссылка для вступления:\n${inviteLink}`,
+        text: `✅ Ваша VIP подписка продлена до <b>${escapeHtml(baseSafe.toLocaleString("ru-RU"))}</b>.`,
         parse_mode: "HTML",
       });
     }
@@ -386,7 +533,7 @@ export const extendVipSubscription = createServerFn({ method: "POST" })
         expires_at: baseSafe.toISOString(),
         status: "active",
         admin_note: null,
-        ...(inviteLink ? { group_invite_link: inviteLink } : {}),
+        group_invite_link: inviteLink,
       })
       .eq("id", data.id);
 
@@ -410,10 +557,7 @@ export const deleteVipSubscription = createServerFn({ method: "POST" })
     const groupId = settings.vip_group_id;
 
     if (groupId && sub.group_invite_link) {
-      await tgVip("revokeChatInviteLink", {
-        chat_id: groupId,
-        invite_link: sub.group_invite_link,
-      });
+      await revokeVipInvite(groupId, sub.group_invite_link as string);
     }
 
     // Kick only if this was an active sub and no other valid active remains

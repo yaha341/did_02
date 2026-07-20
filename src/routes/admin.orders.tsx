@@ -50,6 +50,19 @@ function OrdersPage() {
       setBusy(null);
     }
   }
+
+  async function onResend(id: number) {
+    if (!confirm(`Отправить файлы заказа #${id} ещё раз?`)) return;
+    setBusy(id);
+    try {
+      await confirmOrder({ data: { id, forceResend: true } });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
   async function onReject(id: number) {
     const note = prompt("Причина отказа (необязательно):") || undefined;
     setBusy(id);
@@ -124,7 +137,7 @@ function OrdersPage() {
                   📷 Скриншот оплаты
                 </button>
               )}
-              {(o.status === "awaiting_confirmation" || o.status === "awaiting_payment") && (
+              {o.status === "awaiting_confirmation" && (
                 <div className="flex gap-2 pt-2">
                   <Button onClick={() => onConfirm(o.id)} disabled={busy === o.id}>
                     ✅ Подтвердить и выдать
@@ -134,8 +147,33 @@ function OrdersPage() {
                   </Button>
                 </div>
               )}
+              {o.status === "awaiting_payment" && (
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      if (!confirm(`Выдать заказ #${o.id} без чека?`)) return;
+                      setBusy(o.id);
+                      try {
+                        await confirmOrder({ data: { id: o.id, allowWithoutProof: true } });
+                        qc.invalidateQueries({ queryKey: ["orders"] });
+                      } catch (e: any) {
+                        alert(e.message);
+                      } finally {
+                        setBusy(null);
+                      }
+                    }}
+                    disabled={busy === o.id}
+                  >
+                    Выдать без чека
+                  </Button>
+                  <Button variant="destructive" onClick={() => onReject(o.id)} disabled={busy === o.id}>
+                    ❌ Отклонить
+                  </Button>
+                </div>
+              )}
               {o.status === "delivered" && (
-                <Button size="sm" variant="outline" onClick={() => onConfirm(o.id)}>
+                <Button size="sm" variant="outline" onClick={() => onResend(o.id)} disabled={busy === o.id}>
                   Отправить файлы ещё раз
                 </Button>
               )}

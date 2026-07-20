@@ -1,5 +1,6 @@
 import { tg, downloadTelegramFile } from "./telegram.server";
 import { convertAmount } from "./currency.server";
+import { isTelegramAdmin, parseNotifyAdminIds } from "./telegram-webhook.server";
 
 type BotUser = {
   telegram_id: number;
@@ -774,6 +775,21 @@ export async function handleUpdate(update: any) {
       }
 
       // Admin actions
+      if (data.startsWith("confirm:") || data.startsWith("reject:")) {
+        const s = await db();
+        const { data: settingsRows } = await s.from("app_settings").select("*");
+        const settings: Record<string, string> = {};
+        for (const r of settingsRows ?? []) settings[r.key as string] = (r.value as string) ?? "";
+        const adminIds = parseNotifyAdminIds(settings);
+        if (!isTelegramAdmin(from_id, adminIds)) {
+          await tg("sendMessage", {
+            chat_id,
+            text: "⛔ Только администратор может подтверждать/отклонять заказы.",
+          });
+          return;
+        }
+      }
+
       if (data.startsWith("confirm:")) {
         const orderId = Number(data.slice(8));
         const { deliverOrder } = await import("./orders.functions");
@@ -792,15 +808,18 @@ export async function handleUpdate(update: any) {
           .from("orders")
           .update({ status: "rejected" })
           .eq("id", orderId)
+          .in("status", ["awaiting_payment", "awaiting_confirmation"])
           .select("telegram_id")
-          .single();
+          .maybeSingle();
         if (order) {
           await tg("sendMessage", {
             chat_id: order.telegram_id,
             text: `❌ Ваш заказ #${orderId} отклонён. Если это ошибка — напишите продавцу.`,
           });
+          await tg("sendMessage", { chat_id, text: `Заказ #${orderId} отклонён.` });
+        } else {
+          await tg("sendMessage", { chat_id, text: `Заказ #${orderId} уже обработан или не найден.` });
         }
-        await tg("sendMessage", { chat_id, text: `Заказ #${orderId} отклонён.` });
         return;
       }
       return;

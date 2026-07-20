@@ -18,8 +18,8 @@ export const Route = createFileRoute("/admin/vip/tariffs")({
 });
 
 function tariffDeepLink(botUsername: string, tariffId: string) {
-  const user = botUsername || "RazvivashkaVIP_bot";
-  return `https://t.me/${user}?start=t_${tariffId}`;
+  if (!botUsername) return "";
+  return `https://t.me/${botUsername}?start=t_${tariffId}`;
 }
 
 function AdminVipTariffs() {
@@ -32,7 +32,7 @@ function AdminVipTariffs() {
   const [entry, setEntry] = useState<any>(null);
   const [entrySaved, setEntrySaved] = useState(false);
 
-  const botUsername = bot.data?.username || "RazvivashkaVIP_bot";
+  const botUsername = bot.data?.username || "";
 
   useEffect(() => {
     if (entryQ.data) setEntry({ ...entryQ.data });
@@ -99,6 +99,10 @@ function AdminVipTariffs() {
   };
 
   const copyLink = async (tariffId: string) => {
+    if (!botUsername) {
+      alert("Задайте VIP_BOT_USERNAME в переменных окружения Vercel, иначе deep-link не сформируется.");
+      return;
+    }
     const link = tariffDeepLink(botUsername, tariffId);
     try {
       await navigator.clipboard.writeText(link);
@@ -131,6 +135,12 @@ function AdminVipTariffs() {
         {!editing && <Button onClick={handleNew}>+ Тариф продления</Button>}
       </div>
 
+      {!botUsername && (
+        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-3">
+          Не задан <code>VIP_BOT_USERNAME</code> — deep-link на тарифы и кнопка «Продлить» в напоминаниях не будут работать.
+          Добавьте username VIP-бота в env (например <code>didaktika_03_VIP_bot</code>).
+        </p>
+      )}
       {/* First entry block */}
       {entry && (
         <div className="border-2 border-orange-200 rounded-lg bg-orange-50/50 p-4 space-y-4">
@@ -245,7 +255,11 @@ function AdminVipTariffs() {
           {editing.id && (
             <div className="space-y-1 rounded-md border bg-muted/30 p-3">
               <Label>Ссылка на этот тариф</Label>
-              <code className="block text-xs break-all select-all">{tariffDeepLink(botUsername, editing.id)}</code>
+              {botUsername ? (
+                <code className="block text-xs break-all select-all">{tariffDeepLink(botUsername, editing.id)}</code>
+              ) : (
+                <p className="text-xs text-amber-700">Сначала задайте VIP_BOT_USERNAME в env.</p>
+              )}
               <Button type="button" size="sm" variant="outline" onClick={() => copyLink(editing.id)}>
                 Скопировать ссылку
               </Button>

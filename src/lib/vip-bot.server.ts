@@ -4,6 +4,23 @@ import { resolveTelegramFileMeta } from "./file-mime";
 
 const TG_API = "https://api.telegram.org";
 
+/** Warn stages stored in vip_subscriptions.admin_note */
+export const WARN_STAGE_1 = "warned";
+export const WARN_STAGE_2 = "warned2";
+
+export function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** VIP bot @username from env (no legacy fallback). Empty if unset. */
+export function resolveVipBotUsername(): string {
+  return (process.env.VIP_BOT_USERNAME || "").replace(/^@/, "").trim();
+}
+
 function token() {
   const t = process.env.VIP_BOT_TOKEN;
   if (!t) throw new Error("VIP_BOT_TOKEN is not configured");
@@ -49,6 +66,19 @@ export async function tgVip(method: string, payload: unknown) {
     console.error(`[vip-bot] ${method} retry exhausted`, error);
     return { ok: false, description: "Retry exhausted" };
   }
+}
+
+export async function revokeVipInvite(groupId: string, inviteLink: string | null | undefined) {
+  if (!groupId || !inviteLink) return;
+  await tgVip("revokeChatInviteLink", { chat_id: groupId, invite_link: inviteLink });
+}
+
+/** True if user is currently a member/admin of the VIP group. */
+export async function isVipGroupMember(groupId: string, telegramId: number): Promise<boolean> {
+  const res = await tgVip("getChatMember", { chat_id: groupId, user_id: telegramId });
+  if (!res.ok) return false;
+  const status = (res.result as { status?: string } | undefined)?.status;
+  return status === "member" || status === "administrator" || status === "creator" || status === "restricted";
 }
 
 function publicAppOrigin(): string {
@@ -155,12 +185,50 @@ async function showTariffs(chat_id: number, opts?: { renew?: boolean }) {
 }
 
 async function userHadPaidAccess(s: Awaited<ReturnType<typeof db>>, telegram_id: number): Promise<boolean> {
+  // Real past/present access only (not cancelled / pending)
   const { count } = await s
     .from("vip_subscriptions")
     .select("*", { count: "exact", head: true })
     .eq("telegram_id", telegram_id)
-    .or("status.eq.active,status.eq.expired,imported.eq.true");
+    .in("status", ["active", "expired"]);
   return (count ?? 0) > 0;
+}
+
+/** Parse /start payload including /start@BotName renew and /start t_uuid */
+function parseStartPayload(text: string): string {
+  const trimmed = (text || "").trim();
+  if (!trimmed.toLowerCase().startsWith("/start")) return "";
+  const parts = trimmed.split(/\s+/);
+  return parts.slice(1).join(" ").trim();
+}
+
+const TG_CAPTION_MAX = 1024;
+
+async function sendPaymentInstructions(
+  chat_id: number,
+  paymentText: string,
+  qrPath: string | undefined,
+) {
+  if (qrPath) {
+    if (paymentText.length <= TG_CAPTION_MAX) {
+      await tgVip("sendPhoto", {
+        chat_id,
+        photo: imageUrl(qrPath),
+        caption: paymentText,
+        parse_mode: "HTML",
+      });
+    } else {
+      // Caption limit 1024 — send QR then full text separately
+      await tgVip("sendPhoto", { chat_id, photo: imageUrl(qrPath) });
+      await tgVip("sendMessage", { chat_id, text: paymentText, parse_mode: "HTML" });
+    }
+  } else {
+    await tgVip("sendMessage", {
+      chat_id,
+      text: paymentText,
+      parse_mode: "HTML",
+    });
+  }
 }
 
 async function showEntryOffer(chat_id: number, from: any) {
@@ -183,7 +251,7 @@ async function showEntryOffer(chat_id: number, from: any) {
     text:
       `👋 <b>Первый вход в VIP</b>\n\n` +
       `Разовый вход + доступ на ${entry.duration_days} дн.\n` +
-      `Стоимость: <b>${entry.price} ${entry.currency}</b>\n\n` +
+      `Стоимость: <b>${escapeHtml(String(entry.price))} ${escapeHtml(String(entry.currency))}</b>\n\n` +
       `После оплаты и подтверждения вы получите ссылку в группу.\n` +
       `Дальнейшее продление — по отдельным тарифам.`,
     parse_mode: "HTML",
@@ -226,14 +294,23 @@ async function showStartFlow(chat_id: number, from: any, renew?: boolean) {
   const s = await db();
   const assigned = await getMemberAssignedTariff(s, from.id);
 
-  // Personal (legacy/cheap) renew — skip entry fee
+  // Personal (legacy/cheap) renew — skip entry fee, but allow switching to public list
   if (assigned && !(assigned as any).is_entry) {
     const t = assigned as any;
     const intro = renew
-      ? `Продление VIP — ваш персональный тариф:\n<b>${t.name}</b> — ${t.price} ${t.currency}`
-      : `Ваш персональный тариф VIP:\n<b>${t.name}</b> — ${t.price} ${t.currency}`;
-    await tgVip("sendMessage", { chat_id, text: intro, parse_mode: "HTML" });
-    await handleBuyTariff(chat_id, from.id, from, t.id);
+      ? `Продление VIP — ваш персональный тариф:\n<b>${escapeHtml(String(t.name))}</b> — ${escapeHtml(String(t.price))} ${escapeHtml(String(t.currency))}`
+      : `Ваш персональный тариф VIP:\n<b>${escapeHtml(String(t.name))}</b> — ${escapeHtml(String(t.price))} ${escapeHtml(String(t.currency))}`;
+    await tgVip("sendMessage", {
+      chat_id,
+      text: intro,
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: `Оплатить — ${t.price} ${t.currency}`, callback_data: `buy_tariff:${t.id}` }],
+          [{ text: "Другие публичные тарифы", callback_data: "buy_renew_public" }],
+        ],
+      },
+    });
     return;
   }
 
@@ -257,6 +334,23 @@ async function handleBuyTariff(chat_id: number, telegram_id: number, user: any, 
     await tgVip("sendMessage", { chat_id, text: "Тариф не найден." });
     return;
   }
+  if (!tariff.is_active) {
+    await tgVip("sendMessage", { chat_id, text: "Этот тариф больше не активен. Нажмите /start чтобы выбрать другой." });
+    return;
+  }
+
+  // Entry package is one-time — returning members must use renew tariffs
+  if (tariff.is_entry) {
+    const hadAccess = await userHadPaidAccess(s, telegram_id);
+    if (hadAccess) {
+      await tgVip("sendMessage", {
+        chat_id,
+        text: "Тариф «Первый вход» доступен только новым участникам. Выберите тариф продления:",
+      });
+      await showTariffs(chat_id, { renew: true });
+      return;
+    }
+  }
 
   if (tariff.is_public === false && !tariff.is_entry) {
     await assignMemberTariff(s, telegram_id, user, tariff_id, "deep_link");
@@ -265,15 +359,37 @@ async function handleBuyTariff(chat_id: number, telegram_id: number, user: any, 
   const settings = await getVipSettings();
   const instructions = settings.vip_payment_instructions || "Оплатите по реквизитам и пришлите скриншот.";
 
-  const { data: existingPending } = await s
+  const { data: existingPendings } = await s
     .from("vip_subscriptions")
-    .select("id")
+    .select("id, created_at")
     .eq("telegram_id", telegram_id)
     .eq("status", "pending_payment")
-    .maybeSingle();
+    .order("created_at", { ascending: false });
+
+  const existingPending = existingPendings?.[0] ?? null;
 
   if (existingPending) {
-    await s.from("vip_subscriptions").update({ tariff_id }).eq("id", existingPending.id);
+    // Changing tariff invalidates previous proof
+    await s
+      .from("vip_subscriptions")
+      .update({
+        tariff_id,
+        payment_proof_path: null,
+        username: user?.username ?? null,
+        first_name: user?.first_name ?? null,
+        last_name: user?.last_name ?? null,
+      })
+      .eq("id", existingPending.id);
+
+    // Race: cancel older duplicate pendings if any
+    if ((existingPendings?.length ?? 0) > 1) {
+      const olderIds = existingPendings!.slice(1).map((p) => p.id);
+      await s
+        .from("vip_subscriptions")
+        .update({ status: "cancelled" })
+        .in("id", olderIds)
+        .eq("status", "pending_payment");
+    }
   } else {
     const { error } = await s.from("vip_subscriptions").insert({
       telegram_id,
@@ -289,31 +405,50 @@ async function handleBuyTariff(chat_id: number, telegram_id: number, user: any, 
       console.error("[vip-bot] insert pending failed", error);
       return;
     }
+
+    // After insert, collapse concurrent race duplicates — keep newest
+    const { data: allPending } = await s
+      .from("vip_subscriptions")
+      .select("id, created_at")
+      .eq("telegram_id", telegram_id)
+      .eq("status", "pending_payment")
+      .order("created_at", { ascending: false });
+
+    if ((allPending?.length ?? 0) > 1) {
+      const keepId = allPending![0].id;
+      const olderIds = allPending!.slice(1).map((p) => p.id);
+      await s
+        .from("vip_subscriptions")
+        .update({
+          tariff_id,
+          payment_proof_path: null,
+          username: user?.username ?? null,
+          first_name: user?.first_name ?? null,
+          last_name: user?.last_name ?? null,
+        })
+        .eq("id", keepId);
+      await s
+        .from("vip_subscriptions")
+        .update({ status: "cancelled" })
+        .in("id", olderIds)
+        .eq("status", "pending_payment");
+    }
   }
 
-  const paymentText = `Вы выбрали тариф: <b>${tariff.name}</b>\nК оплате: <b>${tariff.price} ${tariff.currency}</b>\n\n${instructions}\n\nПосле оплаты отправьте фото (скриншот чека) прямо в этот чат.`;
+  const paymentText =
+    `Вы выбрали тариф: <b>${escapeHtml(String(tariff.name))}</b>\n` +
+    `К оплате: <b>${escapeHtml(String(tariff.price))} ${escapeHtml(String(tariff.currency))}</b>\n\n` +
+    `${escapeHtml(instructions)}\n\n` +
+    `После оплаты отправьте фото (скриншот чека) прямо в этот чат.`;
 
-  if (settings.vip_payment_qr_path) {
-    await tgVip("sendPhoto", {
-      chat_id,
-      photo: imageUrl(settings.vip_payment_qr_path),
-      caption: paymentText,
-      parse_mode: "HTML",
-    });
-  } else {
-    await tgVip("sendMessage", {
-      chat_id,
-      text: paymentText,
-      parse_mode: "HTML",
-    });
-  }
+  await sendPaymentInstructions(chat_id, paymentText, settings.vip_payment_qr_path || undefined);
 }
 
 async function handlePhoto(chat_id: number, from_id: number, photoId: string) {
   const s = await db();
   const { data: pendingSub } = await s
     .from("vip_subscriptions")
-    .select("id, tariff_id, vip_tariffs(name, price, currency)")
+    .select("id, tariff_id, payment_proof_path, vip_tariffs(name, price, currency)")
     .eq("telegram_id", from_id)
     .eq("status", "pending_payment")
     .maybeSingle();
@@ -326,13 +461,22 @@ async function handlePhoto(chat_id: number, from_id: number, photoId: string) {
     return;
   }
 
+  const isResubmit = !!pendingSub.payment_proof_path;
+
   await tgVip("sendMessage", {
     chat_id,
-    text: "✅ Чек получен! Ожидайте подтверждения администратором. После проверки вы получите доступ к VIP-группе.",
+    text: isResubmit
+      ? "✅ Новый чек получен! Предыдущий заменён. Ожидайте подтверждения администратором."
+      : "✅ Чек получен! Ожидайте подтверждения администратором. После проверки вы получите доступ к VIP-группе.",
   });
 
   const tariff = pendingSub.vip_tariffs as any;
-  const adminText = `🆕 <b>Оплата VIP-подписки</b>\n\nПользователь: <a href="tg://user?id=${from_id}">ID ${from_id}</a>\nТариф: <b>${tariff?.name}</b>\nСумма: <b>${tariff?.price} ${tariff?.currency}</b>\n\nПроверьте чек и подтвердите подписку.`;
+  const adminText =
+    `🆕 <b>Оплата VIP-подписки${isResubmit ? " (повторный чек)" : ""}</b>\n\n` +
+    `Пользователь: <a href="tg://user?id=${from_id}">ID ${from_id}</a>\n` +
+    `Тариф: <b>${escapeHtml(String(tariff?.name ?? ""))}</b>\n` +
+    `Сумма: <b>${escapeHtml(String(tariff?.price ?? ""))} ${escapeHtml(String(tariff?.currency ?? ""))}</b>\n\n` +
+    `Проверьте чек и подтвердите подписку.`;
 
   const settings = await getVipSettings();
   const adminIds = parseNotifyAdminIds(settings);
@@ -351,6 +495,7 @@ async function handlePhoto(chat_id: number, from_id: number, photoId: string) {
   };
 
   const fileInfo = await downloadVipTelegramFile(photoId);
+  let proofSaved = false;
   if (fileInfo) {
     const path = `vip-${pendingSub.id}/${Date.now()}.${fileInfo.ext}`;
     const { error } = await s.storage.from("payment-proofs").upload(path, fileInfo.bytes, {
@@ -358,14 +503,26 @@ async function handlePhoto(chat_id: number, from_id: number, photoId: string) {
     });
     if (!error) {
       await s.from("vip_subscriptions").update({ payment_proof_path: path }).eq("id", pendingSub.id);
+      proofSaved = true;
+    } else {
+      console.error("[vip-bot] payment proof upload failed:", error.message);
     }
+  } else {
+    console.error("[vip-bot] failed to download payment proof from Telegram");
   }
+
+  const caption = proofSaved
+    ? adminText
+    : `${adminText}\n\n⚠️ Чек не сохранён в Storage — смотрите фото в этом сообщении.`;
+
+  const captionSafe =
+    caption.length > TG_CAPTION_MAX ? caption.slice(0, TG_CAPTION_MAX - 20) + "…" : caption;
 
   for (const adminId of adminIds) {
     await tgVip("sendPhoto", {
       chat_id: adminId,
       photo: photoId,
-      caption: adminText,
+      caption: captionSafe,
       parse_mode: "HTML",
       reply_markup,
     });
@@ -398,7 +555,7 @@ export async function handleVipUpdate(update: any) {
       const text = msg.text || "";
 
       if (text.startsWith("/start")) {
-        const payload = text.slice(6).trim();
+        const payload = parseStartPayload(text);
         // Hidden / special tariff deep-link: /start t_<uuid>
         if (payload.startsWith("t_")) {
           const tariffId = payload.slice(2);
@@ -453,6 +610,16 @@ export async function handleVipUpdate(update: any) {
         return;
       }
 
+      if (data === "buy_renew") {
+        await showStartFlow(chat_id, cq.from, true);
+        return;
+      }
+
+      if (data === "buy_renew_public") {
+        await showTariffs(chat_id, { renew: true });
+        return;
+      }
+
       if (data.startsWith("vip_confirm:")) {
         if (!(await requireVipAdmin(from_id, chat_id))) return;
         const subId = data.slice(12);
@@ -476,48 +643,24 @@ export async function handleVipUpdate(update: any) {
       if (data.startsWith("vip_reject:")) {
         if (!(await requireVipAdmin(from_id, chat_id))) return;
         const subId = data.slice(11);
-        const s = await db();
-        const settings = await getVipSettings();
-        const groupId = settings.vip_group_id;
-
-        const { data: existing } = await s.from("vip_subscriptions").select("*").eq("id", subId).maybeSingle();
-        if (!existing || existing.status !== "pending_payment") {
-          await tgVip("sendMessage", { chat_id, text: "Заявка уже обработана или не найдена." });
-          return;
-        }
-
-        if (groupId && existing.group_invite_link) {
-          await tgVip("revokeChatInviteLink", {
-            chat_id: groupId,
-            invite_link: existing.group_invite_link,
-          });
-        }
-
-        const { data: sub, error } = await s
-          .from("vip_subscriptions")
-          .update({ status: "cancelled" })
-          .eq("id", subId)
-          .eq("status", "pending_payment")
-          .select("telegram_id")
-          .maybeSingle();
-
-        if (error) {
-          await tgVip("sendMessage", { chat_id, text: `Ошибка отклонения: ${error.message}` });
-          return;
-        }
-        if (sub) {
+        const { rejectVipSubscriptionCore } = await import("./vip-subscriptions.functions");
+        try {
+          const result = await rejectVipSubscriptionCore(subId);
           await tgVip("sendMessage", {
-            chat_id: sub.telegram_id,
-            text: "❌ Ваша оплата была отклонена. Если это ошибка, свяжитесь с поддержкой.",
-          });
-        }
-        await tgVip("sendMessage", { chat_id, text: "❌ Подписка отклонена." });
-        if (cq.message?.message_id) {
-          await tgVip("editMessageReplyMarkup", {
             chat_id,
-            message_id: cq.message.message_id,
-            reply_markup: { inline_keyboard: [] },
+            text: result.alreadyProcessed
+              ? "Заявка уже обработана или не найдена."
+              : "❌ Подписка отклонена.",
           });
+          if (cq.message?.message_id) {
+            await tgVip("editMessageReplyMarkup", {
+              chat_id,
+              message_id: cq.message.message_id,
+              reply_markup: { inline_keyboard: [] },
+            });
+          }
+        } catch (e: any) {
+          await tgVip("sendMessage", { chat_id, text: `Ошибка отклонения: ${e.message}` });
         }
         return;
       }
