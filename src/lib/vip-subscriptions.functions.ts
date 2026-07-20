@@ -267,7 +267,11 @@ export const addVipSubscriptionManual = createServerFn({ method: "POST" })
 
     if (error) throw new Error(error.message);
 
-    const { data: tariff } = await s.from("vip_tariffs").select("is_public").eq("id", data.tariff_id).maybeSingle();
+    const { data: tariff } = await s
+      .from("vip_tariffs")
+      .select("is_public, is_entry")
+      .eq("id", data.tariff_id)
+      .maybeSingle();
     if (tariff?.is_public === false && !tariff?.is_entry) {
       await assignMemberTariff(
         s,

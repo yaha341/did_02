@@ -3,10 +3,17 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { getVipSubscriptions, getVipMemberProfiles, addVipSubscriptionManual, extendVipSubscription, deleteVipSubscription, confirmVipSubscription } from "@/lib/vip-subscriptions.functions";
 import { getVipTariffs } from "@/lib/vip-tariffs.functions";
+import { paymentProofKind } from "@/lib/file-mime";
 import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components-ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components-ui/dialog";
 
 export const Route = createFileRoute("/admin/vip/subscribers")({
   component: AdminVipSubscribers,
@@ -33,6 +40,7 @@ function AdminVipSubscribers() {
 
   const [addingManual, setAddingManual] = useState(false);
   const [manualData, setManualData] = useState({ telegram_id: "", tariff_id: "", days: 30, status: "active" });
+  const [proofModal, setProofModal] = useState<{ path: string } | null>(null);
 
   const handleAddManual = async () => {
     if (!manualData.telegram_id || !manualData.tariff_id) return alert("Заполните ID и выберите тариф");
@@ -154,14 +162,14 @@ function AdminVipSubscribers() {
                     <Button variant="default" size="sm" onClick={() => handleConfirm(s.id)}>Подтвердить</Button>
                   )}
                   {s.payment_proof_path && (
-                    <a
-                      href={`/api/admin/file/${s.payment_proof_path}?bucket=payment-proofs`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-blue-500 hover:underline text-xs mr-2"
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="text-blue-500 h-auto p-0 mr-2"
+                      onClick={() => setProofModal({ path: s.payment_proof_path })}
                     >
                       Чек
-                    </a>
+                    </Button>
                   )}
                   {s.status !== "pending_payment" && (
                     <Button variant="outline" size="sm" onClick={() => handleExtend(s.id)}>Продлить</Button>
@@ -179,6 +187,34 @@ function AdminVipSubscribers() {
           </tbody>
         </table>
       </div>
+
+      <Dialog open={!!proofModal} onOpenChange={(open) => !open && setProofModal(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Чек оплаты VIP</DialogTitle>
+          </DialogHeader>
+          {proofModal && (() => {
+            const kind = paymentProofKind(proofModal.path);
+            const src = `/api/admin/file/${proofModal.path}?bucket=payment-proofs`;
+            if (kind === "image") {
+              return <img src={src} alt="Чек оплаты" className="max-h-[80vh] mx-auto rounded" />;
+            }
+            if (kind === "pdf") {
+              return <iframe src={src} className="w-full h-[80vh] rounded border" title="Чек оплаты" />;
+            }
+            return (
+              <div className="text-center py-6 space-y-3">
+                <p className="text-muted-foreground">Формат не поддерживается для предпросмотра.</p>
+                <Button asChild>
+                  <a href={src} target="_blank" rel="noreferrer">
+                    Скачать чек
+                  </a>
+                </Button>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

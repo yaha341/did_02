@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAdmin } from "./admin-session.server";
+import type { TablesInsert, TablesUpdate } from "@/integrations-supabase/types";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -97,7 +98,7 @@ export const saveVipTariff = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();
-    const payload: Record<string, unknown> = {
+    const payload: TablesInsert<"vip_tariffs"> = {
       name: data.name,
       price: data.price,
       currency: data.currency,
@@ -106,13 +107,12 @@ export const saveVipTariff = createServerFn({ method: "POST" })
       is_active: data.is_active,
       is_public: data.is_entry ? false : data.is_public,
       sort_order: data.is_entry ? -100 : data.sort_order,
+      is_entry: data.is_entry !== undefined ? !!data.is_entry : undefined,
     };
-    if (data.is_entry !== undefined) {
-      payload.is_entry = !!data.is_entry;
-    }
 
     if (data.id) {
-      const { error } = await s.from("vip_tariffs").update(payload).eq("id", data.id);
+      const updatePayload: TablesUpdate<"vip_tariffs"> = payload;
+      const { error } = await s.from("vip_tariffs").update(updatePayload).eq("id", data.id);
       if (error) throw new Error(error.message);
     } else {
       const { error } = await s.from("vip_tariffs").insert(payload);

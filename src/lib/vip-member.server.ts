@@ -1,8 +1,9 @@
 /** Per-user VIP tariff assignment (e.g. legacy cheap price via hidden link). */
 
-type SupabaseAdmin = Awaited<
-  ReturnType<typeof import("@/integrations-supabase/client.server")>["supabaseAdmin"]
->;
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations-supabase/types";
+
+type SupabaseAdmin = SupabaseClient<Database>;
 
 type MemberUser = {
   username?: string | null;

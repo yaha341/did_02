@@ -142,8 +142,12 @@ export type Database = {
       order_items: {
         Row: {
           delivered_language: string | null
+          file_name_kz_snapshot: string | null
           file_name_snapshot: string | null
+          file_path_kz_snapshot: string | null
           file_path_snapshot: string | null
+          file_url_kz_snapshot: string | null
+          file_url_snapshot: string | null
           id: string
           name_snapshot: string
           order_id: number
@@ -153,8 +157,12 @@ export type Database = {
         }
         Insert: {
           delivered_language?: string | null
+          file_name_kz_snapshot?: string | null
           file_name_snapshot?: string | null
+          file_path_kz_snapshot?: string | null
           file_path_snapshot?: string | null
+          file_url_kz_snapshot?: string | null
+          file_url_snapshot?: string | null
           id?: string
           name_snapshot: string
           order_id: number
@@ -164,8 +172,12 @@ export type Database = {
         }
         Update: {
           delivered_language?: string | null
+          file_name_kz_snapshot?: string | null
           file_name_snapshot?: string | null
+          file_path_kz_snapshot?: string | null
           file_path_snapshot?: string | null
+          file_url_kz_snapshot?: string | null
+          file_url_snapshot?: string | null
           id?: string
           name_snapshot?: string
           order_id?: number
@@ -258,6 +270,7 @@ export type Database = {
           id: string
           instructions: string
           is_active: boolean
+          qr_code_path: string | null
           sort_order: number
         }
         Insert: {
@@ -268,6 +281,7 @@ export type Database = {
           id?: string
           instructions: string
           is_active?: boolean
+          qr_code_path?: string | null
           sort_order?: number
         }
         Update: {
@@ -278,6 +292,7 @@ export type Database = {
           id?: string
           instructions?: string
           is_active?: boolean
+          qr_code_path?: string | null
           sort_order?: number
         }
         Relationships: []
@@ -317,11 +332,17 @@ export type Database = {
       products: {
         Row: {
           category_id: string | null
+          category_ids: string[]
+          country_prices: Json
           created_at: string
           currency: string
           description: string
           file_name: string | null
+          file_name_kz: string | null
           file_path: string | null
+          file_path_kz: string | null
+          file_url: string | null
+          file_url_kz: string | null
           id: string
           is_active: boolean
           keywords: string
@@ -331,11 +352,17 @@ export type Database = {
         }
         Insert: {
           category_id?: string | null
+          category_ids?: string[]
+          country_prices?: Json
           created_at?: string
           currency?: string
           description?: string
           file_name?: string | null
+          file_name_kz?: string | null
           file_path?: string | null
+          file_path_kz?: string | null
+          file_url?: string | null
+          file_url_kz?: string | null
           id?: string
           is_active?: boolean
           keywords?: string
@@ -345,11 +372,17 @@ export type Database = {
         }
         Update: {
           category_id?: string | null
+          category_ids?: string[]
+          country_prices?: Json
           created_at?: string
           currency?: string
           description?: string
           file_name?: string | null
+          file_name_kz?: string | null
           file_path?: string | null
+          file_path_kz?: string | null
+          file_url?: string | null
+          file_url_kz?: string | null
           id?: string
           is_active?: boolean
           keywords?: string
@@ -367,12 +400,160 @@ export type Database = {
           },
         ]
       }
+      vip_member_profiles: {
+        Row: {
+          assigned_at: string
+          assigned_source: string
+          assigned_tariff_id: string | null
+          first_name: string | null
+          last_name: string | null
+          telegram_id: number
+          username: string | null
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_source?: string
+          assigned_tariff_id?: string | null
+          first_name?: string | null
+          last_name?: string | null
+          telegram_id: number
+          username?: string | null
+        }
+        Update: {
+          assigned_at?: string
+          assigned_source?: string
+          assigned_tariff_id?: string | null
+          first_name?: string | null
+          last_name?: string | null
+          telegram_id?: number
+          username?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vip_member_profiles_assigned_tariff_id_fkey"
+            columns: ["assigned_tariff_id"]
+            isOneToOne: false
+            referencedRelation: "vip_tariffs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vip_subscriptions: {
+        Row: {
+          admin_note: string | null
+          created_at: string
+          expires_at: string
+          first_name: string | null
+          group_invite_link: string | null
+          id: string
+          imported: boolean
+          last_name: string | null
+          payment_proof_path: string | null
+          started_at: string | null
+          status: string
+          tariff_id: string
+          telegram_id: number
+          updated_at: string
+          username: string | null
+        }
+        Insert: {
+          admin_note?: string | null
+          created_at?: string
+          expires_at: string
+          first_name?: string | null
+          group_invite_link?: string | null
+          id?: string
+          imported?: boolean
+          last_name?: string | null
+          payment_proof_path?: string | null
+          started_at?: string | null
+          status?: string
+          tariff_id: string
+          telegram_id: number
+          updated_at?: string
+          username?: string | null
+        }
+        Update: {
+          admin_note?: string | null
+          created_at?: string
+          expires_at?: string
+          first_name?: string | null
+          group_invite_link?: string | null
+          id?: string
+          imported?: boolean
+          last_name?: string | null
+          payment_proof_path?: string | null
+          started_at?: string | null
+          status?: string
+          tariff_id?: string
+          telegram_id?: number
+          updated_at?: string
+          username?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vip_subscriptions_tariff_id_fkey"
+            columns: ["tariff_id"]
+            isOneToOne: false
+            referencedRelation: "vip_tariffs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vip_tariffs: {
+        Row: {
+          created_at: string
+          currency: string
+          description: string
+          duration_days: number
+          duration_minutes: number
+          id: string
+          is_active: boolean
+          is_entry: boolean
+          is_public: boolean
+          name: string
+          price: number
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          currency?: string
+          description?: string
+          duration_days: number
+          duration_minutes?: number
+          id?: string
+          is_active?: boolean
+          is_entry?: boolean
+          is_public?: boolean
+          name: string
+          price: number
+          sort_order?: number
+        }
+        Update: {
+          created_at?: string
+          currency?: string
+          description?: string
+          duration_days?: number
+          duration_minutes?: number
+          id?: string
+          is_active?: boolean
+          is_entry?: boolean
+          is_public?: boolean
+          name?: string
+          price?: number
+          sort_order?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      reset_orders_sequence: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

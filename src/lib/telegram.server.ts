@@ -1,3 +1,5 @@
+import { resolveTelegramFileMeta } from "./file-mime";
+
 const TG_API = "https://api.telegram.org";
 
 function token() {
@@ -50,6 +52,6 @@ export async function downloadTelegramFile(file_id: string): Promise<{ bytes: Ui
   const res = await fetch(`${TG_API}/file/bot${token()}/${path}`);
   if (!res.ok) return null;
   const bytes = new Uint8Array(await res.arrayBuffer());
-  const mime = res.headers.get("content-type") || "application/octet-stream";
+  const { mime } = resolveTelegramFileMeta(path, res.headers.get("content-type"));
   return { bytes, mime };
 }

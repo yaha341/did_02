@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { isAdminAuthed } from "@/lib/admin-session.server";
+import { mimeFromPath } from "@/lib/file-mime";
 
 export const Route = createFileRoute("/api/admin/file/$")({
   server: {
@@ -22,8 +23,13 @@ export const Route = createFileRoute("/api/admin/file/$")({
           }
           if (!data) return new Response("Not found (no data)", { status: 404 });
           const buf = await data.arrayBuffer();
+          const storedType = data.type || "";
+          const contentType =
+            storedType && storedType !== "application/octet-stream"
+              ? storedType
+              : mimeFromPath(splat, "application/octet-stream");
           return new Response(buf, {
-            headers: { "Content-Type": data.type || "application/octet-stream" },
+            headers: { "Content-Type": contentType },
           });
         } catch (e: any) {
           console.error("API error:", e);

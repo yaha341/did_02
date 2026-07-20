@@ -1,5 +1,6 @@
 import { isTelegramAdmin, parseNotifyAdminIds } from "./telegram-webhook.server";
 import { assignMemberTariff, getMemberAssignedTariff } from "./vip-member.server";
+import { resolveTelegramFileMeta } from "./file-mime";
 
 const TG_API = "https://api.telegram.org";
 
@@ -50,7 +51,22 @@ export async function tgVip(method: string, payload: unknown) {
   }
 }
 
-export async function downloadVipTelegramFile(file_id: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
+function publicAppOrigin(): string {
+  return (
+    process.env.PUBLIC_APP_URL ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "") ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
+    "https://did-02.vercel.app"
+  );
+}
+
+function imageUrl(path: string): string {
+  return `${publicAppOrigin()}/api/public/img/${path}`;
+}
+
+export async function downloadVipTelegramFile(
+  file_id: string,
+): Promise<{ bytes: Uint8Array; mime: string; ext: string } | null> {
   const info = await tgVip("getFile", { file_id });
   // @ts-expect-error dynamic
   const path = info?.result?.file_path as string | undefined;
@@ -60,8 +76,8 @@ export async function downloadVipTelegramFile(file_id: string): Promise<{ bytes:
     const res = await retryFetch(`${TG_API}/file/bot${token()}/${path}`, { method: "GET" });
     if (!res.ok) return null;
     const bytes = new Uint8Array(await res.arrayBuffer());
-    const mime = res.headers.get("content-type") || "application/octet-stream";
-    return { bytes, mime };
+    const meta = resolveTelegramFileMeta(path, res.headers.get("content-type"));
+    return { bytes, mime: meta.mime, ext: meta.ext };
   } catch (error) {
     console.error(`[vip-bot] downloadFile retry exhausted`, error);
     return null;
@@ -275,11 +291,22 @@ async function handleBuyTariff(chat_id: number, telegram_id: number, user: any, 
     }
   }
 
-  await tgVip("sendMessage", {
-    chat_id,
-    text: `Вы выбрали тариф: <b>${tariff.name}</b>\nК оплате: <b>${tariff.price} ${tariff.currency}</b>\n\n${instructions}\n\nПосле оплаты отправьте фото (скриншот чека) прямо в этот чат.`,
-    parse_mode: "HTML",
-  });
+  const paymentText = `Вы выбрали тариф: <b>${tariff.name}</b>\nК оплате: <b>${tariff.price} ${tariff.currency}</b>\n\n${instructions}\n\nПосле оплаты отправьте фото (скриншот чека) прямо в этот чат.`;
+
+  if (settings.vip_payment_qr_path) {
+    await tgVip("sendPhoto", {
+      chat_id,
+      photo: imageUrl(settings.vip_payment_qr_path),
+      caption: paymentText,
+      parse_mode: "HTML",
+    });
+  } else {
+    await tgVip("sendMessage", {
+      chat_id,
+      text: paymentText,
+      parse_mode: "HTML",
+    });
+  }
 }
 
 async function handlePhoto(chat_id: number, from_id: number, photoId: string) {
@@ -325,9 +352,10 @@ async function handlePhoto(chat_id: number, from_id: number, photoId: string) {
 
   const fileInfo = await downloadVipTelegramFile(photoId);
   if (fileInfo) {
-    const ext = fileInfo.mime.split("/")[1] || "jpg";
-    const path = `${pendingSub.id}-${Date.now()}.${ext}`;
-    const { error } = await s.storage.from("payment-proofs").upload(path, fileInfo.bytes, { contentType: fileInfo.mime });
+    const path = `vip-${pendingSub.id}/${Date.now()}.${fileInfo.ext}`;
+    const { error } = await s.storage.from("payment-proofs").upload(path, fileInfo.bytes, {
+      contentType: fileInfo.mime,
+    });
     if (!error) {
       await s.from("vip_subscriptions").update({ payment_proof_path: path }).eq("id", pendingSub.id);
     }

@@ -3,11 +3,26 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { getSettings, saveSetting } from "@/lib/settings.functions";
 import { runVipCronNow } from "@/lib/vip-subscriptions.functions";
+import { getSignedUploadUrl } from "@/lib/products.functions";
 import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
 import { Checkbox } from "@/components-ui/checkbox";
 import { Textarea } from "@/components-ui/textarea";
+
+async function uploadQr(file: File) {
+  const { path, signedUrl } = await getSignedUploadUrl({
+    data: { bucket: "product-images", filename: file.name },
+  });
+  const contentType = file.type || "image/jpeg";
+  const res = await fetch(signedUrl, {
+    method: "PUT",
+    body: file,
+    headers: { "Content-Type": contentType },
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return path;
+}
 
 export const Route = createFileRoute("/admin/vip/settings")({
   component: AdminVipSettings,
@@ -22,6 +37,7 @@ function AdminVipSettings() {
   const [warnDays2, setWarnDays2] = useState("");
   const [testMode, setTestMode] = useState(false);
   const [instructions, setInstructions] = useState("");
+  const [qrPath, setQrPath] = useState("");
   const [welcomeMsg, setWelcomeMsg] = useState("");
   const [saved, setSaved] = useState(false);
   const [cronBusy, setCronBusy] = useState(false);
@@ -34,6 +50,7 @@ function AdminVipSettings() {
       setWarnDays2(settings.data.vip_warn_days_2 || "1");
       setTestMode(settings.data.vip_test_mode === "true");
       setInstructions(settings.data.vip_payment_instructions || "");
+      setQrPath(settings.data.vip_payment_qr_path || "");
       setWelcomeMsg(settings.data.vip_welcome_message || "");
     }
   }, [settings.data]);
@@ -44,6 +61,7 @@ function AdminVipSettings() {
     await saveSetting({ data: { key: "vip_warn_days_2", value: warnDays2 } });
     await saveSetting({ data: { key: "vip_test_mode", value: testMode ? "true" : "false" } });
     await saveSetting({ data: { key: "vip_payment_instructions", value: instructions } });
+    await saveSetting({ data: { key: "vip_payment_qr_path", value: qrPath } });
     await saveSetting({ data: { key: "vip_welcome_message", value: welcomeMsg } });
 
     qc.invalidateQueries({ queryKey: ["settings"] });
@@ -64,6 +82,16 @@ function AdminVipSettings() {
       setCronResult("Ошибка: " + e.message);
     } finally {
       setCronBusy(false);
+    }
+  };
+
+  const onQrChange = async (file: File | null) => {
+    if (!file) return;
+    try {
+      const path = await uploadQr(file);
+      setQrPath(path);
+    } catch (e: any) {
+      alert("Ошибка загрузки QR: " + e.message);
     }
   };
 
@@ -101,15 +129,40 @@ function AdminVipSettings() {
           </div>
         </div>
 
-        <div className="space-y-2 pt-2">
-          <Label>Текст с реквизитами для VIP</Label>
-          <Textarea 
-            value={instructions} 
-            onChange={(e) => setInstructions(e.target.value)} 
-            rows={5}
-            placeholder="Оплатите на Каспи +7... и пришлите чек"
-          />
-          <p className="text-xs text-muted-foreground">Этот текст показывается после того как пользователь выбрал тариф.</p>
+        <div className="border rounded-lg p-4 space-y-4 bg-muted/20">
+          <h3 className="font-medium">Реквизиты для оплаты VIP</h3>
+          <div className="space-y-2">
+            <Label>Текст с реквизитами</Label>
+            <Textarea
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+              rows={5}
+              placeholder={"Kaspi: +7 700 ...\nПолучатель: Имя Фамилия\nПосле оплаты пришлите скриншот чека."}
+            />
+            <p className="text-xs text-muted-foreground">
+              Показывается в VIP-боте после выбора тарифа (вместе с QR, если загружен).
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label>QR-код для оплаты (опционально)</Label>
+            <Input type="file" accept="image/*" onChange={(e) => onQrChange(e.target.files?.[0] ?? null)} />
+            {qrPath && (
+              <div className="mt-2 relative inline-block">
+                <img
+                  src={`/api/public/img/${qrPath}`}
+                  alt="QR VIP"
+                  className="w-32 h-32 object-cover rounded border"
+                />
+                <button
+                  type="button"
+                  onClick={() => setQrPath("")}
+                  className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full w-5 h-5 text-xs"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="space-y-2 pt-2">
