@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { getVipSubscriptions, getVipMemberProfiles, addVipSubscriptionManual, extendVipSubscription, deleteVipSubscription, confirmVipSubscription } from "@/lib/vip-subscriptions.functions";
+import { getVipSubscriptions, getVipMemberProfiles, addVipSubscriptionManual, extendVipSubscription, deleteVipSubscription, confirmVipSubscription, rejectVipSubscription } from "@/lib/vip-subscriptions.functions";
 import { getVipTariffs } from "@/lib/vip-tariffs.functions";
 import { paymentProofKind } from "@/lib/file-mime";
 import { Button } from "@/components-ui/button";
@@ -53,6 +53,16 @@ function AdminVipSubscribers() {
     if (!confirm("Подтвердить оплату и выдать доступ?")) return;
     try {
       await confirmVipSubscription({ data: { id } });
+      qc.invalidateQueries({ queryKey: ["vip_subs"] });
+    } catch (e: any) {
+      alert("Ошибка: " + e.message);
+    }
+  };
+
+  const handleReject = async (id: string) => {
+    if (!confirm("Отклонить оплату? Пользователь получит уведомление в VIP-боте.")) return;
+    try {
+      await rejectVipSubscription({ data: { id } });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
     } catch (e: any) {
       alert("Ошибка: " + e.message);
@@ -159,7 +169,10 @@ function AdminVipSubscribers() {
                 </td>
                 <td className="p-2 text-right space-x-2">
                   {s.status === "pending_payment" && (
-                    <Button variant="default" size="sm" onClick={() => handleConfirm(s.id)}>Подтвердить</Button>
+                    <>
+                      <Button variant="default" size="sm" onClick={() => handleConfirm(s.id)}>Подтвердить</Button>
+                      <Button variant="outline" size="sm" onClick={() => handleReject(s.id)}>Отклонить</Button>
+                    </>
                   )}
                   {s.payment_proof_path && (
                     <Button

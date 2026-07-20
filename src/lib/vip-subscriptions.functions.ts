@@ -239,6 +239,52 @@ export const confirmVipSubscription = createServerFn({ method: "POST" })
     return await activateVipSubscription(data.id);
   });
 
+export const rejectVipSubscription = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    const s = await db();
+
+    const { data: sub, error: fetchError } = await s
+      .from("vip_subscriptions")
+      .select("*")
+      .eq("id", data.id)
+      .maybeSingle();
+
+    if (fetchError) throw new Error(fetchError.message);
+    if (!sub) throw new Error("Подписка не найдена");
+    if (sub.status !== "pending_payment") {
+      throw new Error("Отклонить можно только заявку в статусе «ожидает оплаты»");
+    }
+
+    const { data: settingsData } = await s.from("app_settings").select("*");
+    const settings: Record<string, string> = {};
+    for (const r of settingsData ?? []) settings[r.key as string] = (r.value as string) ?? "";
+    const groupId = settings.vip_group_id;
+
+    if (groupId && sub.group_invite_link) {
+      await tgVip("revokeChatInviteLink", {
+        chat_id: groupId,
+        invite_link: sub.group_invite_link,
+      });
+    }
+
+    const { error } = await s
+      .from("vip_subscriptions")
+      .update({ status: "cancelled" })
+      .eq("id", data.id)
+      .eq("status", "pending_payment");
+
+    if (error) throw new Error(error.message);
+
+    await tgVip("sendMessage", {
+      chat_id: sub.telegram_id,
+      text: "❌ Ваша оплата была отклонена. Если это ошибка, свяжитесь с поддержкой.",
+    });
+
+    return { ok: true };
+  });
+
 const AddManualInput = z.object({
   telegram_id: z.string().min(1),
   tariff_id: z.string().uuid(),
