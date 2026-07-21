@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components-ui/dialog";
 import { confirmOrder, deleteOrder, listOrders, rejectOrder } from "@/lib/orders.functions";
+import { blockTelegramUserFn } from "@/lib/blocked-users.functions";
 import { useState } from "react";
 
 // Тип чека определяется по расширению сохранённого пути.
@@ -80,6 +81,30 @@ function OrdersPage() {
     try {
       await deleteOrder({ data: { id } });
       qc.invalidateQueries({ queryKey: ["orders"] });
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onBlock(o: { id: number; telegram_id: number; username?: string | null; display_name?: string | null }) {
+    if (
+      !confirm(
+        `Заблокировать ${o.display_name || o.telegram_id}?\n\nБот перестанет отвечать, доступ к VIP-каналу закроется.`,
+      )
+    )
+      return;
+    setBusy(o.id);
+    try {
+      await blockTelegramUserFn({
+        data: {
+          telegram_id: o.telegram_id,
+          username: o.username ?? undefined,
+          first_name: o.display_name ?? undefined,
+          reason: "заблокирован из заказов",
+        },
+      });
     } catch (e: any) {
       alert(e.message);
     } finally {
@@ -177,7 +202,16 @@ function OrdersPage() {
                   Отправить файлы ещё раз
                 </Button>
               )}
-              <div className="flex justify-end pt-1">
+              <div className="flex justify-end gap-2 pt-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                  onClick={() => onBlock(o)}
+                  disabled={busy === o.id}
+                >
+                  Заблокировать
+                </Button>
                 <Button
                   size="sm"
                   variant="ghost"

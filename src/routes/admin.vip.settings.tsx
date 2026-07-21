@@ -110,13 +110,13 @@ function AdminVipSettings() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <h2 className="text-xl font-semibold">Настройки VIP-группы</h2>
+      <h2 className="text-xl font-semibold">Настройки VIP-канала</h2>
 
       <div className="bg-card border rounded-lg p-4 space-y-4">
         <div className="space-y-2">
-          <Label>ID Telegram Группы (начинается с -100)</Label>
+          <Label>ID Telegram Канала (начинается с -100)</Label>
           <Input value={groupId} onChange={(e) => setGroupId(e.target.value)} placeholder="-100123456789" />
-          <p className="text-xs text-muted-foreground">Бот должен быть администратором в этой группе с правом "Приглашать участников" и "Исключать участников".</p>
+          <p className="text-xs text-muted-foreground">Бот должен быть администратором в этом канале с правом «Приглашать участников» и «Исключать участников».</p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

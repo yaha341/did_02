@@ -82,6 +82,17 @@ CREATE TABLE public.bot_users (
 GRANT ALL ON public.bot_users TO service_role;
 ALTER TABLE public.bot_users ENABLE ROW LEVEL SECURITY;
 
+-- Blocked users (permanent bot blacklist)
+CREATE TABLE public.blocked_users (
+  telegram_id BIGINT PRIMARY KEY,
+  username TEXT,
+  first_name TEXT,
+  reason TEXT,
+  blocked_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+GRANT ALL ON public.blocked_users TO service_role;
+ALTER TABLE public.blocked_users ENABLE ROW LEVEL SECURITY;
+
 -- Cart items
 CREATE TABLE public.cart_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -271,6 +282,14 @@ WITH CHECK (true);
 DROP POLICY IF EXISTS "Service Role All bot_users" ON public.bot_users;
 CREATE POLICY "Service Role All bot_users"
 ON public.bot_users FOR ALL
+TO service_role
+USING (true)
+WITH CHECK (true);
+
+-- Blocked users
+DROP POLICY IF EXISTS "Service Role All blocked_users" ON public.blocked_users;
+CREATE POLICY "Service Role All blocked_users"
+ON public.blocked_users FOR ALL
 TO service_role
 USING (true)
 WITH CHECK (true);

@@ -9,6 +9,7 @@ import {
   tgVip,
 } from "./vip-bot.server";
 import { assignMemberTariff } from "./vip-member.server";
+import { formatDateTimeRu } from "./format-datetime.server";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -182,7 +183,7 @@ export async function activateVipSubscription(id: string) {
 
   const groupId = settings.vip_group_id;
   if (!groupId) {
-    throw new Error("Не настроен ID VIP группы в настройках");
+    throw new Error("Не настроен ID VIP канала в настройках");
   }
 
   const tariff = sub.vip_tariffs as any;
@@ -212,7 +213,7 @@ export async function activateVipSubscription(id: string) {
     });
 
     if (!inviteLinkData.ok) {
-      throw new Error("Не удалось создать ссылку-приглашение. Убедитесь что бот админ в группе.");
+      throw new Error("Не удалось создать ссылку-приглашение. Убедитесь что бот админ в канале.");
     }
 
     link = (inviteLinkData.result as any).invite_link as string;
@@ -246,7 +247,7 @@ export async function activateVipSubscription(id: string) {
   await expireOtherActivesAndRevokeInvites(s, sub.telegram_id as number, id, groupId);
 
   const welcomeMsg = escapeHtml(settings.vip_welcome_message || "Ваша VIP подписка активна!");
-  const until = escapeHtml(expiresAt.toLocaleString("ru-RU"));
+  const until = escapeHtml(formatDateTimeRu(expiresAt));
 
   if (!needsInvite) {
     await tgVip("sendMessage", {
@@ -254,7 +255,7 @@ export async function activateVipSubscription(id: string) {
       text:
         `✅ ${welcomeMsg}\n\n` +
         `Доступ продлён до: <b>${until}</b>\n\n` +
-        `Вы остаётесь в VIP-группе — новая ссылка не нужна.`,
+        `Вы остаётесь в VIP-канале — новая ссылка не нужна.`,
       parse_mode: "HTML",
     });
   } else if (isStackedRenewal) {
@@ -263,7 +264,7 @@ export async function activateVipSubscription(id: string) {
       text:
         `✅ ${welcomeMsg}\n\n` +
         `Доступ продлён до: <b>${until}</b>\n\n` +
-        `Вас нет в группе — одноразовая ссылка для возврата:\n${link}`,
+        `Вас нет в канале — одноразовая ссылка для возврата:\n${link}`,
       parse_mode: "HTML",
     });
   } else {
@@ -502,8 +503,8 @@ export const extendVipSubscription = createServerFn({ method: "POST" })
         await tgVip("sendMessage", {
           chat_id: sub.telegram_id,
           text:
-            `✅ Подписка продлена до <b>${escapeHtml(baseSafe.toLocaleString("ru-RU"))}</b>\n\n` +
-            `Вы уже в VIP-группе — новая ссылка не нужна.`,
+            `✅ Подписка продлена до <b>${escapeHtml(formatDateTimeRu(baseSafe))}</b>\n\n` +
+            `Вы уже в VIP-канале — новая ссылка не нужна.`,
           parse_mode: "HTML",
         });
       } else {
@@ -515,14 +516,14 @@ export const extendVipSubscription = createServerFn({ method: "POST" })
           expire_date: Math.floor(baseSafe.getTime() / 1000),
         });
         if (!invite.ok) {
-          throw new Error("Не удалось создать ссылку-приглашение. Убедитесь что бот админ в группе.");
+          throw new Error("Не удалось создать ссылку-приглашение. Убедитесь что бот админ в канале.");
         }
         inviteLink = (invite.result as any).invite_link;
 
         await tgVip("sendMessage", {
           chat_id: sub.telegram_id,
           text:
-            `✅ Подписка продлена до <b>${escapeHtml(baseSafe.toLocaleString("ru-RU"))}</b>\n\n` +
+            `✅ Подписка продлена до <b>${escapeHtml(formatDateTimeRu(baseSafe))}</b>\n\n` +
             `Одноразовая ссылка для вступления:\n${inviteLink}`,
           parse_mode: "HTML",
         });
@@ -530,7 +531,7 @@ export const extendVipSubscription = createServerFn({ method: "POST" })
     } else {
       await tgVip("sendMessage", {
         chat_id: sub.telegram_id,
-        text: `✅ Ваша VIP подписка продлена до <b>${escapeHtml(baseSafe.toLocaleString("ru-RU"))}</b>.`,
+        text: `✅ Ваша VIP подписка продлена до <b>${escapeHtml(formatDateTimeRu(baseSafe))}</b>.`,
         parse_mode: "HTML",
       });
     }
@@ -567,7 +568,7 @@ export const excludeVipFromCommunity = createServerFn({ method: "POST" })
     const settings: Record<string, string> = {};
     for (const r of settingsData ?? []) settings[r.key as string] = (r.value as string) ?? "";
     const groupId = (settings.vip_group_id || "").trim();
-    if (!groupId) throw new Error("vip_group_id не настроен в /admin/vip/settings");
+    if (!groupId) throw new Error("ID VIP канала не настроен в /admin/vip/settings");
 
     const { data: userSubs } = await s
       .from("vip_subscriptions")
@@ -585,7 +586,7 @@ export const excludeVipFromCommunity = createServerFn({ method: "POST" })
       revoke_messages: false,
     });
     if (!ban.ok && !isAlreadyNotInChat(ban.description)) {
-      throw new Error(ban.description || "Не удалось исключить из группы (бот админ? право ban users?)");
+      throw new Error(ban.description || "Не удалось исключить из канала (бот админ? право ban users?)");
     }
     await tgVip("unbanChatMember", {
       chat_id: groupId,
@@ -609,7 +610,7 @@ export const excludeVipFromCommunity = createServerFn({ method: "POST" })
       chat_id: telegramId,
       text:
         `❌ <b>Доступ к VIP-сообществу отозван администратором.</b>\n\n` +
-        `Вы исключены из группы. Чтобы вернуться — оформите подписку заново в боте.`,
+        `Вы исключены из канала. Чтобы вернуться — оформите подписку заново в боте.`,
       parse_mode: "HTML",
     });
 

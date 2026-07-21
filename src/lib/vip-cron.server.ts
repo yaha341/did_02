@@ -1,3 +1,4 @@
+import { formatDateTimeRu } from "./format-datetime.server";
 import {
   escapeHtml,
   isAlreadyNotInChat,
@@ -28,11 +29,11 @@ async function sendWarn(
   expiresAt: string,
   stage: 1 | 2,
 ): Promise<{ ok: boolean; description?: string }> {
-  const when = escapeHtml(new Date(expiresAt).toLocaleString("ru-RU"));
+  const when = escapeHtml(formatDateTimeRu(expiresAt));
   const text =
     stage === 1
-      ? `⚠️ <b>Напоминание</b>\n\nВаша VIP подписка истекает <b>${when}</b>.\n\nПродлите подписку заранее, чтобы не потерять доступ к группе.`
-      : `🚨 <b>Срочно!</b>\n\nВаша VIP подписка истекает уже <b>${when}</b>!\n\nПродлите сейчас — иначе доступ к группе будет закрыт.`;
+      ? `⚠️ <b>Напоминание</b>\n\nВаша VIP подписка истекает <b>${when}</b>.\n\nПродлите подписку заранее, чтобы не потерять доступ к каналу.`
+      : `🚨 <b>Срочно!</b>\n\nВаша VIP подписка истекает уже <b>${when}</b>!\n\nПродлите сейчас — иначе доступ к каналу будет закрыт.`;
 
   const botUsername = resolveVipBotUsername();
   const reply_markup = botUsername
@@ -85,7 +86,7 @@ export async function runVipCronJob(): Promise<VipCronResult> {
   const groupId = settings.vip_group_id;
 
   if (!groupId) {
-    throw new Error("vip_group_id не настроен в настройках VIP");
+    throw new Error("ID VIP канала не настроен в настройках VIP");
   }
 
   const now = new Date();
@@ -201,7 +202,7 @@ export async function runVipCronJob(): Promise<VipCronResult> {
 
       await tgVip("sendMessage", {
         chat_id: sub.telegram_id,
-        text: `❌ <b>Ваша VIP подписка истекла!</b>\n\nВы были исключены из VIP группы. Чтобы вернуться, оформите новую подписку в боте.`,
+        text: `❌ <b>Ваша VIP подписка истекла!</b>\n\nВы были исключены из VIP канала. Чтобы вернуться, оформите новую подписку в боте.`,
         parse_mode: "HTML",
       });
 

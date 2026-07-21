@@ -1,6 +1,7 @@
 import { tg, downloadTelegramFile } from "./telegram.server";
 import { convertAmount } from "./currency.server";
 import { isTelegramAdmin, parseNotifyAdminIds } from "./telegram-webhook.server";
+import { replyIfBlocked } from "./blocked-users.server";
 
 type BotUser = {
   telegram_id: number;
@@ -661,6 +662,7 @@ export async function handleUpdate(update: any) {
       const from_id = cq.from?.id;
       const data: string = cq.data || "";
       await tg("answerCallbackQuery", { callback_query_id: cq.id });
+      if (await replyIfBlocked(chat_id, from_id)) return;
 
       const user = await upsertUser(cq.from as any);
       
@@ -830,6 +832,7 @@ export async function handleUpdate(update: any) {
     const chat_id = msg.chat.id;
     const from = msg.from;
     if (!from) return;
+    if (await replyIfBlocked(chat_id, from.id)) return;
     const user = await upsertUser(from);
 
     // /start - special: also detect if sender is the admin and offer to bind

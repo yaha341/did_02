@@ -1,6 +1,8 @@
 import { isTelegramAdmin, parseNotifyAdminIds } from "./telegram-webhook.server";
 import { assignMemberTariff, getMemberAssignedTariff } from "./vip-member.server";
 import { resolveTelegramFileMeta } from "./file-mime";
+import { formatDateTimeRu } from "./format-datetime.server";
+import { replyIfBlocked } from "./blocked-users.server";
 
 const TG_API = "https://api.telegram.org";
 
@@ -167,7 +169,7 @@ async function showStatus(chat_id: number, telegram_id: number) {
 
   if (active) {
     const tariff = active.vip_tariffs as { name?: string; price?: number; currency?: string } | null;
-    const until = new Date(active.expires_at as string).toLocaleString("ru-RU");
+    const until = formatDateTimeRu(active.expires_at as string);
     await sendWithMenu(
       chat_id,
       `📋 <b>Ваш VIP статус</b>\n\n` +
@@ -279,9 +281,9 @@ async function showTariffs(chat_id: number, opts?: { renew?: boolean; inGroup?: 
 
   // Copy must match reality: don't promise "stay in group" if user is not a member
   const intro = opts?.inGroup
-    ? "Продление VIP: выберите тариф. После оплаты срок продлится — вы останетесь в группе, новая ссылка не нужна."
+    ? "Продление VIP: выберите тариф. После оплаты срок продлится — вы останетесь в канале, новая ссылка не нужна."
     : opts?.renew
-      ? "Выберите тариф. После подтверждения оплаты пришлём одноразовую ссылку для вступления в группу."
+      ? "Выберите тариф. После подтверждения оплаты пришлём одноразовую ссылку для вступления в канал."
       : "Выберите тариф для VIP-подписки:";
 
   await tgVip("sendMessage", {
@@ -359,7 +361,7 @@ async function showEntryOffer(chat_id: number, from: any) {
       `👋 <b>Первый вход в VIP</b>\n\n` +
       `Разовый вход + доступ на ${entry.duration_days} дн.\n` +
       `Стоимость: <b>${escapeHtml(String(entry.price))} ${escapeHtml(String(entry.currency))}</b>\n\n` +
-      `После оплаты и подтверждения вы получите ссылку в группу.\n` +
+      `После оплаты и подтверждения вы получите ссылку в канал.\n` +
       `Дальнейшее продление — по отдельным тарифам.`,
     parse_mode: "HTML",
     reply_markup: {
@@ -435,7 +437,7 @@ async function showStartFlow(chat_id: number, from: any, renew?: boolean) {
     wantRenew
       ? inGroup
         ? "Продление VIP — кнопки меню внизу. Выберите тариф ниже."
-        : "Возврат в VIP — выберите тариф ниже. После оплаты придёт одноразовая ссылка в группу."
+        : "Возврат в VIP — выберите тариф ниже. После оплаты придёт одноразовая ссылка в канал."
       : "Добро пожаловать в VIP-бот. Меню внизу экрана — тарифы ниже.",
   );
 
@@ -446,7 +448,7 @@ async function showStartFlow(chat_id: number, from: any, renew?: boolean) {
     const t = assigned as any;
     const intro = inGroup
       ? `Продление VIP — ваш персональный тариф:\n<b>${escapeHtml(String(t.name))}</b> — ${escapeHtml(String(t.price))} ${escapeHtml(String(t.currency))}`
-      : `Ваш персональный тариф VIP:\n<b>${escapeHtml(String(t.name))}</b> — ${escapeHtml(String(t.price))} ${escapeHtml(String(t.currency))}\n\nПосле оплаты — одноразовая ссылка в группу.`;
+      : `Ваш персональный тариф VIP:\n<b>${escapeHtml(String(t.name))}</b> — ${escapeHtml(String(t.price))} ${escapeHtml(String(t.currency))}\n\nПосле оплаты — одноразовая ссылка в канал.`;
     await tgVip("sendMessage", {
       chat_id,
       text: intro,
@@ -657,7 +659,7 @@ async function handlePhoto(chat_id: number, from_id: number, photoId: string) {
       ? notifyAdmins
         ? "✅ Новый чек получен! Предыдущий заменён. Ожидайте подтверждения администратором."
         : "✅ Чек обновлён. Не присылайте чаще раза в минуту — админ уже уведомлён."
-      : "✅ Чек получен! Ожидайте подтверждения администратором. После проверки вы получите доступ к VIP-группе.",
+      : "✅ Чек получен! Ожидайте подтверждения администратором. После проверки вы получите доступ к VIP-каналу.",
   });
 
   const tariff = pendingSub.vip_tariffs as any;
@@ -745,6 +747,7 @@ export async function handleVipUpdate(update: any) {
       const chat_id = msg.chat?.id;
       const from_id = msg.from?.id;
       const text = msg.text || "";
+      if (await replyIfBlocked(chat_id, from_id, tgVip)) return;
 
       if (text.startsWith("/start")) {
         const payload = parseStartPayload(text);
@@ -807,6 +810,9 @@ export async function handleVipUpdate(update: any) {
       const from_id = cq.from?.id;
       const data: string = cq.data || "";
       await tgVip("answerCallbackQuery", { callback_query_id: cq.id });
+
+      const isAdminAction = data.startsWith("vip_confirm:") || data.startsWith("vip_reject:");
+      if (!isAdminAction && (await replyIfBlocked(chat_id, from_id, tgVip))) return;
 
       if (data.startsWith("buy_tariff:")) {
         await handleBuyTariff(chat_id, from_id, cq.from, data.slice(11));

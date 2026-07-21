@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { getVipSubscriptions, getVipMemberProfiles, addVipSubscriptionManual, extendVipSubscription, deleteVipSubscription, confirmVipSubscription, rejectVipSubscription, excludeVipFromCommunity } from "@/lib/vip-subscriptions.functions";
+import { blockTelegramUserFn } from "@/lib/blocked-users.functions";
 import { getVipTariffs } from "@/lib/vip-tariffs.functions";
 import { paymentProofKind } from "@/lib/file-mime";
 import { Button } from "@/components-ui/button";
@@ -85,7 +86,7 @@ function AdminVipSubscribers() {
   const handleExclude = async (id: string) => {
     if (
       !confirm(
-        "Исключить из VIP-сообщества?\n\nЧеловека кикнут из группы, активные подписки станут «Истёкшие», он получит сообщение в боте.",
+        "Исключить из VIP-сообщества?\n\nЧеловека кикнут из канала, активные подписки станут «Истёкшие», он получит сообщение в боте.",
       )
     )
       return;
@@ -97,8 +98,30 @@ function AdminVipSubscribers() {
     }
   };
 
+  const handleBlock = async (sub: { telegram_id: number; username?: string | null; first_name?: string | null }) => {
+    if (
+      !confirm(
+        `Заблокировать пользователя ${sub.telegram_id} навсегда?\n\nБот перестанет отвечать, доступ к VIP-каналу закроется, подписки и незавершённые заказы отменятся.`,
+      )
+    )
+      return;
+    try {
+      await blockTelegramUserFn({
+        data: {
+          telegram_id: sub.telegram_id,
+          username: sub.username ?? undefined,
+          first_name: sub.first_name ?? undefined,
+          reason: "заблокирован из VIP-подписчиков",
+        },
+      });
+      qc.invalidateQueries({ queryKey: ["vip_subs"] });
+    } catch (e: any) {
+      alert("Ошибка: " + e.message);
+    }
+  };
+
   const handleDelete = async (id: string) => {
-    if (!confirm("Удалить подписку?\n\nЕсли у человека больше не останется записей — бот забудет его (личный тариф и «уже был в VIP»), и снова покажет «Первый вход».\n\nДля кика из группы лучше «Исключить».")) return;
+    if (!confirm("Удалить подписку?\n\nЕсли у человека больше не останется записей — бот забудет его (личный тариф и «уже был в VIP»), и снова покажет «Первый вход».\n\nДля кика из канала лучше «Исключить». Для полного запрета — «Заблокировать».")) return;
     await deleteVipSubscription({ data: { id } });
     qc.invalidateQueries({ queryKey: ["vip_subs"] });
     qc.invalidateQueries({ queryKey: ["vip_profiles"] });
@@ -237,6 +260,14 @@ function AdminVipSubscribers() {
                         Исключить
                       </Button>
                     )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                      onClick={() => handleBlock(s)}
+                    >
+                      Заблокировать
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
