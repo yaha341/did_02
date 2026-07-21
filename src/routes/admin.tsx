@@ -25,10 +25,10 @@ function AdminLayout() {
             <NavLink to="/admin/categories">Категории</NavLink>
             <NavLink to="/admin/products">Товары</NavLink>
             <NavLink to="/admin/orders">Заказы</NavLink>
-            <NavLink to="/admin/blocked">🚫 Блокировка</NavLink>
             <NavLink to="/admin/payment-methods">Реквизиты</NavLink>
             <NavLink to="/admin/settings">Настройки</NavLink>
             <NavLink to="/admin/vip">👑 VIP-группа</NavLink>
+            <NavLink to="/admin/blocked">🚫 Блокировка</NavLink>
           </div>
           <Button
             variant="ghost"
